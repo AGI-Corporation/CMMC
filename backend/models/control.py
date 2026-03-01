@@ -4,7 +4,7 @@ Pydantic models for CMMC Controls
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, UTC
 
 
 class CMMCLevel(str, Enum):
@@ -36,6 +36,7 @@ class ImplementationStatus(str, Enum):
     IMPLEMENTED = "implemented"
     NOT_APPLICABLE = "not_applicable"
     PARTIALLY_IMPLEMENTED = "partially_implemented"
+    PLANNED = "planned"
 
 
 class Control(BaseModel):
@@ -49,7 +50,7 @@ class Control(BaseModel):
     discussion: Optional[str] = Field(None, description="CMMC discussion / implementation guidance")
     assessment_objectives: Optional[List[str]] = Field(default_factory=list, description="Assessment objectives")
     weight: int = Field(default=1, description="SPRS point weight (deducted if not implemented)")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
         json_schema_extra = {
@@ -71,6 +72,8 @@ class ControlResponse(BaseModel):
     implementation_status: Optional[ImplementationStatus] = None
     evidence_count: int = 0
     notes: Optional[str] = None
+    confidence: float = 0.0
+    poam_required: bool = False
 
 
 class ControlListResponse(BaseModel):
@@ -87,3 +90,6 @@ class ControlUpdate(BaseModel):
     notes: Optional[str] = None
     responsible_party: Optional[str] = None
     target_completion_date: Optional[datetime] = None
+    evidence_ids: Optional[List[str]] = Field(default_factory=list)
+    confidence: Optional[float] = 0.0
+    poam_required: Optional[bool] = False

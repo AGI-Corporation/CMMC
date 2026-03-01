@@ -4,43 +4,22 @@ AGI Corporation 2026
 
 Maps to DoD ZT User Pillar and CMMC Access Control (AC) / Identification &
 Authentication (IA) domains. Implements Fulcrum LOE 1 - Identity management.
-
-Responsibilities:
-- Verify MFA coverage across all privileged and non-privileged users
-- Enforce RBAC/ABAC policy checks against CMMC AC requirements  
-- Audit joiner/mover/leaver (JML) lifecycle flows
-- Generate AC and IA evidence artifacts for CMMC assessment
-- Compute ZT User pillar confidence score
 """
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
-
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from backend.db.database import get_db, AgentRunRecord
 
 # CMMC AC + IA controls owned by this agent
 ICAM_CONTROLS = [
-    "AC.1.001",  # Limit system access to authorized users
-    "AC.1.002",  # Limit system access to authorized functions
-    "AC.2.005",  # Provide privacy and security notices
-    "AC.2.006",  # Limit use of portable storage devices
-    "AC.2.007",  # Employ principle of least privilege
-    "AC.2.008",  # Use non-privileged accounts for non-security functions
-    "AC.2.009",  # Prevent non-privileged users from executing privileged functions
-    "AC.2.010",  # Use session lock after inactivity
-    "AC.2.011",  # Authorize wireless access prior to connections
-    "AC.2.013",  # Monitor/control remote access sessions
-    "AC.2.015",  # Route remote access via managed access control points
-    "AC.2.016",  # Control CUI flow per authorized authorizations
-    "IA.1.076",  # Identify users and processes
-    "IA.1.077",  # Authenticate user, process, or device identities
-    "IA.2.078",  # Enforce minimum password complexity
-    "IA.2.079",  # Prohibit password reuse
-    "IA.2.080",  # Allow temporary password use with immediate change
-    "IA.2.081",  # Store and transmit only cryptographically protected passwords
-    "IA.2.082",  # Employ replay-resistant authentication (MFA)
-    "IA.3.083",  # Use multifactor authentication for local/network/remote access
-    "IA.3.084",  # Employ replay-resistant authentication mechanisms
+    "AC.1.001", "AC.1.002", "AC.2.005", "AC.2.006", "AC.2.007",
+    "AC.2.008", "AC.2.009", "AC.2.010", "AC.2.011", "AC.2.013",
+    "AC.2.015", "AC.2.016", "IA.1.076", "IA.1.077", "IA.2.078",
+    "IA.2.079", "IA.2.080", "IA.2.081", "IA.2.082", "IA.3.083",
+    "IA.3.084",
 ]
 
 
@@ -66,16 +45,12 @@ class ICAMAssessmentResult:
     findings: List[str]
     evidence_id: str
     remediation: List[str]
-    assessed_at: datetime = field(default_factory=datetime.utcnow)
+    assessed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class ICAMAgent:
     """
     ICAM Agent aligned to ZT User Pillar.
-    
-    In production, connect to: Okta, Azure AD, Active Directory,
-    or any SCIM-compliant IdP via the source_system connectors.
-    In demo mode, operates on mock user data.
     """
 
     def __init__(self, mock_mode: bool = True):
@@ -91,17 +66,17 @@ class ICAMAgent:
                 user_id="u001", username="alice.admin",
                 roles=["SystemAdmin", "CUI_Handler"],
                 mfa_enabled=True, mfa_type="fido2",
-                last_login=datetime.utcnow() - timedelta(days=1),
+                last_login=datetime.now(UTC) - timedelta(days=1),
                 account_status="active", privileged=True,
-                department="IT", last_access_review=datetime.utcnow() - timedelta(days=30),
+                department="IT", last_access_review=datetime.now(UTC) - timedelta(days=30),
             ),
             UserRecord(
                 user_id="u002", username="bob.dev",
                 roles=["Developer"],
                 mfa_enabled=True, mfa_type="totp",
-                last_login=datetime.utcnow() - timedelta(days=2),
+                last_login=datetime.now(UTC) - timedelta(days=2),
                 account_status="active", privileged=False,
-                department="Engineering", last_access_review=datetime.utcnow() - timedelta(days=60),
+                department="Engineering", last_access_review=datetime.now(UTC) - timedelta(days=60),
             ),
             UserRecord(
                 user_id="u003", username="carol.svc",
@@ -115,9 +90,9 @@ class ICAMAgent:
                 user_id="u004", username="dave.old",
                 roles=["Developer"],
                 mfa_enabled=False, mfa_type="none",
-                last_login=datetime.utcnow() - timedelta(days=200),
+                last_login=datetime.now(UTC) - timedelta(days=200),
                 account_status="active", privileged=False,
-                department="Engineering", last_access_review=datetime.utcnow() - timedelta(days=400),
+                department="Engineering", last_access_review=datetime.now(UTC) - timedelta(days=400),
             ),
         ]
 
@@ -143,7 +118,7 @@ class ICAMAgent:
 
         confidence = (coverage_pct * 0.5 + privileged_coverage * 0.5)
         status = "implemented" if confidence >= 0.95 else (
-            "partial" if confidence >= 0.5 else "not_implemented"
+            "partially_implemented" if confidence >= 0.5 else "not_implemented"
         )
 
         return ICAMAssessmentResult(
@@ -157,19 +132,14 @@ class ICAMAgent:
 
     def check_least_privilege(self) -> ICAMAssessmentResult:
         """Assess AC.2.007 - Principle of least privilege."""
-        over_privileged = [
-            u for u in self.users
-            if u.privileged and "Admin" not in "".join(u.roles)
-            and "ServiceAccount" not in "".join(u.roles)
-        ]
         stale_accounts = [
             u for u in self.users
-            if u.last_login and (datetime.utcnow() - u.last_login).days > 90
+            if u.last_login and (datetime.now(UTC) - u.last_login).days > 90
         ]
         unreviewed = [
             u for u in self.users
             if not u.last_access_review
-            or (datetime.utcnow() - u.last_access_review).days > 365
+            or (datetime.now(UTC) - u.last_access_review).days > 365
         ]
 
         findings = []
@@ -183,7 +153,7 @@ class ICAMAgent:
 
         confidence = max(0.0, 1.0 - (len(stale_accounts) + len(unreviewed)) / max(len(self.users), 1) * 0.5)
         status = "implemented" if confidence >= 0.9 else (
-            "partial" if confidence >= 0.6 else "not_implemented"
+            "partially_implemented" if confidence >= 0.6 else "not_implemented"
         )
 
         return ICAMAssessmentResult(
@@ -195,7 +165,7 @@ class ICAMAgent:
             remediation=remediation,
         )
 
-    def run_full_assessment(self) -> List[Dict[str, Any]]:
+    async def run_full_assessment(self, db: AsyncSession, trigger: str = "manual") -> List[Dict[str, Any]]:
         """Run all ICAM assessments and return evidence-ready results."""
         assessments = [
             self.check_mfa_coverage(),
@@ -214,26 +184,39 @@ class ICAMAgent:
                 "assessed_at": a.assessed_at.isoformat(),
                 "owner_agent": "icam",
             })
+
+        # Persist result
+        record = AgentRunRecord(
+            id=str(uuid.uuid4()),
+            agent_type="icam",
+            trigger=trigger,
+            scope="User Pillar",
+            controls_evaluated=[a.control_id for a in assessments],
+            findings={"results": results},
+            status="completed",
+            created_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC)
+        )
+        db.add(record)
+        await db.commit()
+
         return results
 
-
-# FastAPI router
-from fastapi import APIRouter
 
 router = APIRouter()
 _icam = ICAMAgent(mock_mode=True)
 
 
 @router.get("/assess", summary="Run full ICAM assessment (ZT User Pillar)")
-async def run_icam_assessment():
+async def run_icam_assessment(db: AsyncSession = Depends(get_db)):
     """Run ICAM checks for MFA, least privilege, JML - aligned to ZT User Pillar."""
-    results = _icam.run_full_assessment()
+    results = await _icam.run_full_assessment(db)
     return {
         "agent": "icam",
         "zt_pillar": "User",
         "assessments": results,
         "controls_evaluated": [r["control_id"] for r in results],
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
