@@ -243,10 +243,12 @@ class ComplianceOrchestrator:
             "zt_scorecard": zt_scorecard,
             "agent_runs": [
                 {
+                    "id": r.id,
                     "agent": r.agent_type,
                     "status": r.status,
                     "created_at": r.created_at.isoformat(),
-                    "scope": r.scope
+                    "scope": r.scope,
+                    "fingerprint": r.fingerprint
                 }
                 for r in runs
             ],

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import get_db, AgentRunRecord
+from backend.db.database import get_db, AgentRunRecord, generate_fingerprint
 
 
 class SeverityLevel(str, Enum):
@@ -125,7 +125,7 @@ class DevSecOpsAgent:
             "timestamp": datetime.now(UTC).isoformat(),
         }
 
-        # Persist result
+        # Persist result with fingerprint
         record = AgentRunRecord(
             id=str(uuid.uuid4()),
             agent_type="devsecops",
@@ -135,7 +135,8 @@ class DevSecOpsAgent:
             findings=result,
             status="completed",
             created_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC)
+            completed_at=datetime.now(UTC),
+            fingerprint=generate_fingerprint({"findings": result, "agent": "devsecops"})
         )
         db.add(record)
         await db.commit()

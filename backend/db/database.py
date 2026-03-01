@@ -4,6 +4,8 @@ AGI Corporation CMMC Platform 2026
 """
 import os
 import json
+import hashlib
+from typing import Any
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select
@@ -71,6 +73,7 @@ class AssessmentRecord(Base):
     assessment_date = Column(DateTime, default=lambda: datetime.now(UTC))
     next_review = Column(DateTime)
     poam_required = Column(String, default="false")
+    fingerprint = Column(String, nullable=True)  # OML provenance fingerprint
 
 
 class AgentRunRecord(Base):
@@ -85,6 +88,13 @@ class AgentRunRecord(Base):
     mistral_model = Column(String)  # mistral model used for this run
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime)
+    fingerprint = Column(String, nullable=True)  # OML provenance fingerprint
+
+
+def generate_fingerprint(data: Any) -> str:
+    """Generate OML-inspired SHA-256 fingerprint for data integrity."""
+    serialized = json.dumps(data, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode()).hexdigest()
 
 
 async def init_db():

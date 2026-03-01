@@ -1,5 +1,8 @@
 
 import React, { useEffect, useState } from 'react';
+import AgentFleet from './AgentFleet';
+import ProvenanceDetail from './ProvenanceDetail';
+import ComplianceAdvisor from './ComplianceAdvisor';
 
 export interface DashboardSummary {
   total_controls: number;
@@ -27,18 +30,22 @@ export interface ZTPillarScore {
 const Dashboard: React.FC = () => {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [ztScorecard, setZtScorecard] = useState<ZTPillarScore[]>([]);
+  const [recentRuns, setRecentRuns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
     try {
-      const [sumRes, ztRes] = await Promise.all([
+      const [sumRes, ztRes, reportRes] = await Promise.all([
         fetch('http://localhost:8000/api/assessment/dashboard'),
-        fetch('http://localhost:8000/api/orchestrator/scorecard')
+        fetch('http://localhost:8000/api/orchestrator/scorecard'),
+        fetch('http://localhost:8000/api/orchestrator/report')
       ]);
       const sumData = await sumRes.json();
       const ztData = await ztRes.json();
+      const reportData = await reportRes.json();
       setSummary(sumData);
       setZtScorecard(ztData.scorecard);
+      setRecentRuns(reportData.agent_runs || []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -57,7 +64,7 @@ const Dashboard: React.FC = () => {
       <header className="mb-8 flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">CMMC Compliance Dashboard</h1>
-          <p className="text-gray-600">AI-Powered Compliance Automation</p>
+          <p className="text-gray-600">AI-Powered Compliance Automation with NANDA & OML</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 text-center">
           <span className="text-sm font-medium text-gray-500 uppercase tracking-wider">SPRS Score</span>
@@ -67,69 +74,98 @@ const Dashboard: React.FC = () => {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">Readiness Status</h3>
-          <p className="text-xl font-semibold text-gray-800">{summary?.readiness}</p>
-          <div className="mt-4 w-full bg-gray-200 rounded-full h-2">
-            <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${summary?.compliance_percentage}%` }}></div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+        <div className="lg:col-span-2 space-y-8">
+          {/* Main Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+              <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">Readiness</h3>
+              <p className="text-xl font-semibold text-gray-800">{summary?.readiness}</p>
+              <div className="mt-4 w-full bg-gray-200 rounded-full h-2">
+                <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${summary?.compliance_percentage}%` }}></div>
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex justify-around items-center">
+              <div className="text-center">
+                <span className="block text-2xl font-bold text-green-600">{summary?.implemented}</span>
+                <span className="text-xs text-gray-400 uppercase">Impl</span>
+              </div>
+              <div className="text-center">
+                <span className="block text-2xl font-bold text-yellow-600">{summary?.partially_implemented}</span>
+                <span className="text-xs text-gray-400 uppercase">Partial</span>
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+              <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">Levels</h3>
+              <div className="flex gap-2">
+                {Object.keys(summary?.by_level || {}).map(lvl => (
+                  <div key={lvl} className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded">
+                    {lvl}: {summary?.by_level[lvl].implemented}/{summary?.by_level[lvl].total}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-          <p className="text-right text-xs mt-1 text-gray-500">{summary?.compliance_percentage}% Complete</p>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex justify-around items-center">
-          <div className="text-center">
-            <span className="block text-2xl font-bold text-green-600">{summary?.implemented}</span>
-            <span className="text-xs text-gray-400 uppercase">Implemented</span>
-          </div>
-          <div className="text-center">
-            <span className="block text-2xl font-bold text-yellow-600">{summary?.partially_implemented}</span>
-            <span className="text-xs text-gray-400 uppercase">Partial</span>
-          </div>
-          <div className="text-center">
-            <span className="block text-2xl font-bold text-red-600">{summary?.not_implemented}</span>
-            <span className="text-xs text-gray-400 uppercase">Remaining</span>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-           <h3 className="text-gray-500 text-sm font-bold uppercase mb-2">Controls Filter</h3>
-           <div className="flex gap-2">
-              {Object.keys(summary?.by_level || {}).map(lvl => (
-                <div key={lvl} className="text-xs bg-gray-100 px-2 py-1 rounded">
-                  {lvl}: {summary?.by_level[lvl].implemented}/{summary?.by_level[lvl].total}
+
+          {/* ZT Scorecard */}
+          <div>
+            <h2 className="text-xl font-bold text-gray-800 mb-4">Zero Trust Maturity Index</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {ztScorecard.map(pillar => (
+                <div key={pillar.pillar} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                  <div className="flex justify-between">
+                    <h4 className="font-bold text-gray-700">{pillar.pillar}</h4>
+                    <span className="text-xs text-gray-400 uppercase">Confidence: {Math.round(pillar.confidence_avg * 100)}%</span>
+                  </div>
+                  <div className="flex items-center gap-4 mt-2">
+                    <div className="flex-1 bg-gray-100 rounded-full h-2">
+                      <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${pillar.maturity_pct}%` }}></div>
+                    </div>
+                    <span className="text-lg font-black text-blue-700">{pillar.maturity_pct}%</span>
+                  </div>
                 </div>
               ))}
-           </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-8">
+          <ComplianceAdvisor />
+          <AgentFleet />
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-800">Integrity Feed</h3>
+              <p className="text-xs text-gray-500 uppercase tracking-widest">OML Cryptographic Provenance</p>
+            </div>
+            <div className="p-4 space-y-4 max-h-[400px] overflow-y-auto">
+              {recentRuns.map((run, idx) => (
+                <div key={idx} className="border-l-2 border-blue-500 pl-4 py-1">
+                  <div className="flex justify-between items-start">
+                    <span className="text-xs font-bold text-gray-700">{run.agent.toUpperCase()} Execution</span>
+                    <span className="text-[10px] text-gray-400">{new Date(run.created_at).toLocaleTimeString()}</span>
+                  </div>
+                  <p className="text-[10px] text-gray-500 mb-2 italic">{run.scope}</p>
+                  <ProvenanceDetail
+                    id={run.agent}
+                    fingerprint={run.fingerprint}
+                    timestamp={run.created_at}
+                    agent={run.agent}
+                  />
+                </div>
+              ))}
+              {recentRuns.length === 0 && <p className="text-center text-gray-400 text-sm py-4">No recent agent activity recorded.</p>}
+            </div>
+          </div>
         </div>
       </div>
 
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">Zero Trust Maturity</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {ztScorecard.map(pillar => (
-          <div key={pillar.pillar} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-            <h4 className="font-bold text-gray-700">{pillar.pillar}</h4>
-            <div className="flex justify-between items-end mt-2">
-              <span className="text-2xl font-black text-blue-700">{pillar.maturity_pct}%</span>
-              <span className="text-xs text-gray-400">Conf: {Math.round(pillar.confidence_avg * 100)}%</span>
-            </div>
-            <div className="mt-2 w-full bg-gray-100 rounded-full h-1.5">
-               <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${pillar.maturity_pct}%` }}></div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-12 flex gap-4">
-        <button
-          onClick={fetchData}
-          className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 transition"
-        >
-          Refresh Data
+      <div className="flex gap-4">
+        <button onClick={fetchData} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5 active:translate-y-0">
+          Refresh Real-time Data
         </button>
-        <button
-          className="bg-white text-blue-600 border border-blue-600 px-6 py-2 rounded-lg font-bold hover:bg-blue-50 transition"
-          onClick={() => window.open('http://localhost:8000/api/reports/ssp', '_blank')}
-        >
-          View SSP Report
+        <button onClick={() => window.open('http://localhost:8000/api/reports/ssp', '_blank')} className="bg-white text-blue-600 border-2 border-blue-600 px-8 py-3 rounded-lg font-bold hover:bg-blue-50 transition transform hover:-translate-y-0.5">
+          Generate SSP Report
         </button>
       </div>
     </div>

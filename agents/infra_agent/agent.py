@@ -10,7 +10,7 @@ from datetime import datetime, UTC
 from typing import Dict, List, Any
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import get_db, AgentRunRecord
+from backend.db.database import get_db, AgentRunRecord, generate_fingerprint
 
 class InfraAgent:
     def __init__(self, mock_mode: bool = True):
@@ -36,7 +36,7 @@ class InfraAgent:
     async def run_full_assessment(self, db: AsyncSession, trigger: str = "manual") -> Dict[str, Any]:
         result = self.audit_network_segmentation()
 
-        # Persist result
+        # Persist result with fingerprint
         record = AgentRunRecord(
             id=str(uuid.uuid4()),
             agent_type="infra",
@@ -46,7 +46,8 @@ class InfraAgent:
             findings=result,
             status="completed",
             created_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC)
+            completed_at=datetime.now(UTC),
+            fingerprint=generate_fingerprint({"findings": result, "agent": "infra"})
         )
         db.add(record)
         await db.commit()

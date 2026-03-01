@@ -10,7 +10,7 @@ from datetime import datetime, UTC
 from typing import Dict, List, Any
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import get_db, AgentRunRecord
+from backend.db.database import get_db, AgentRunRecord, generate_fingerprint
 
 class DataAgent:
     def __init__(self, mock_mode: bool = True):
@@ -36,7 +36,7 @@ class DataAgent:
     async def run_full_assessment(self, db: AsyncSession, trigger: str = "manual") -> Dict[str, Any]:
         result = self.audit_data_protection()
 
-        # Persist result
+        # Persist result with fingerprint
         record = AgentRunRecord(
             id=str(uuid.uuid4()),
             agent_type="data",
@@ -46,7 +46,8 @@ class DataAgent:
             findings=result,
             status="completed",
             created_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC)
+            completed_at=datetime.now(UTC),
+            fingerprint=generate_fingerprint({"findings": result, "agent": "data"})
         )
         db.add(record)
         await db.commit()

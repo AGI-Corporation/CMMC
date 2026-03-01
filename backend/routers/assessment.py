@@ -228,7 +228,8 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
                 evidence_ids=[res["evidence_id"]],
                 assessor=f"Agent: {run.agent_type}",
                 assessment_date=datetime.now(UTC),
-                poam_required="true" if res["status"] in ["partial", "not_implemented", "partially_implemented"] else "false"
+                poam_required="true" if res["status"] in ["partial", "not_implemented", "partially_implemented"] else "false",
+                fingerprint=run.fingerprint # Inherit fingerprint for provenance
             )
             db.add(new_ass)
             promoted_count += 1
@@ -249,7 +250,8 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
                 evidence_ids=[findings.get("image_scan", {}).get("evidence_id")],
                 assessor=f"Agent: {run.agent_type}",
                 assessment_date=datetime.now(UTC),
-                poam_required="true" if status in ["partial", "not_implemented", "partially_implemented"] else "false"
+                poam_required="true" if status in ["partial", "not_implemented", "partially_implemented"] else "false",
+                fingerprint=run.fingerprint
             )
             db.add(new_ass)
             promoted_count += 1
@@ -267,7 +269,8 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
                 evidence_ids=[findings.get("evidence_id")],
                 assessor=f"Agent: {run.agent_type}",
                 assessment_date=datetime.now(UTC),
-                poam_required="true" if f["status"] in ["partial", "not_implemented", "partially_implemented"] else "false"
+                poam_required="true" if f["status"] in ["partial", "not_implemented", "partially_implemented"] else "false",
+                fingerprint=run.fingerprint
             )
             db.add(new_ass)
             promoted_count += 1
@@ -285,7 +288,8 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
                 evidence_ids=[findings.get("evidence_id")],
                 assessor=f"Agent: {run.agent_type}",
                 assessment_date=datetime.now(UTC),
-                poam_required="true" if f["status"] in ["partial", "not_implemented", "partially_implemented"] else "false"
+                poam_required="true" if f["status"] in ["partial", "not_implemented", "partially_implemented"] else "false",
+                fingerprint=run.fingerprint
             )
             db.add(new_ass)
             promoted_count += 1

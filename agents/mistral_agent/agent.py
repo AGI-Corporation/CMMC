@@ -14,7 +14,7 @@ from typing import Optional, List, Dict, Any
 from mistralai import Mistral
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import AgentRunRecord, get_db
+from backend.db.database import AgentRunRecord, get_db, generate_fingerprint
 
 # ─── Mistral Configuration ─────────────────────────────────────────────────────
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
@@ -94,7 +94,8 @@ class MistralComplianceAgent:
             status=status,
             mistral_model=self.model,
             created_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC)
+            completed_at=datetime.now(UTC),
+            fingerprint=generate_fingerprint({"findings": findings, "agent": "mistral"})
         )
         db.add(record)
         await db.commit()

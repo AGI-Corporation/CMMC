@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import get_db, AgentRunRecord
+from backend.db.database import get_db, AgentRunRecord, generate_fingerprint
 
 # CMMC AC + IA controls owned by this agent
 ICAM_CONTROLS = [
@@ -117,9 +117,8 @@ class ICAMAgent:
             remediation.append("Immediately enroll privileged accounts in FIDO2/hardware MFA")
 
         confidence = (coverage_pct * 0.5 + privileged_coverage * 0.5)
-        status = "implemented" if confidence >= 0.95 else (
-            "partially_implemented" if confidence >= 0.5 else "not_implemented"
-        )
+        status = "partially_implemented" if confidence >= 0.5 else "not_implemented"
+        if confidence >= 0.95: status = "implemented"
 
         return ICAMAssessmentResult(
             control_id="IA.3.083",
@@ -152,9 +151,8 @@ class ICAMAgent:
             remediation.append("Conduct quarterly access reviews; document in evidence")
 
         confidence = max(0.0, 1.0 - (len(stale_accounts) + len(unreviewed)) / max(len(self.users), 1) * 0.5)
-        status = "implemented" if confidence >= 0.9 else (
-            "partially_implemented" if confidence >= 0.6 else "not_implemented"
-        )
+        status = "partially_implemented" if confidence >= 0.6 else "not_implemented"
+        if confidence >= 0.9: status = "implemented"
 
         return ICAMAssessmentResult(
             control_id="AC.2.007",
@@ -185,7 +183,7 @@ class ICAMAgent:
                 "owner_agent": "icam",
             })
 
-        # Persist result
+        # Persist result with fingerprint
         record = AgentRunRecord(
             id=str(uuid.uuid4()),
             agent_type="icam",
@@ -195,7 +193,8 @@ class ICAMAgent:
             findings={"results": results},
             status="completed",
             created_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC)
+            completed_at=datetime.now(UTC),
+            fingerprint=generate_fingerprint({"results": results, "agent": "icam"})
         )
         db.add(record)
         await db.commit()
