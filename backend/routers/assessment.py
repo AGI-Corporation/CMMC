@@ -118,6 +118,9 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
             sprs_score -= deduction
         elif status == "partially_implemented" or status == "partial":
             partial += 1
+            # Consistent with sprs endpoint: partially implemented also deducts points
+            deduction = SPRS_DEDUCTIONS.get(cid, 1)
+            sprs_score -= deduction
         elif status == "not_applicable":
             not_applicable += 1
         else:
