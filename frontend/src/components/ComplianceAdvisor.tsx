@@ -11,8 +11,9 @@ const ComplianceAdvisor: React.FC = () => {
     if (!question.trim()) return;
 
     setLoading(true);
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     try {
-      const response = await fetch('http://localhost:8000/api/agents/mistral/ask', {
+      const response = await fetch(`${baseUrl}/api/agents/mistral/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question }),

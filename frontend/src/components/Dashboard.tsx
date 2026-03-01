@@ -34,11 +34,12 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     try {
       const [sumRes, ztRes, reportRes] = await Promise.all([
-        fetch('http://localhost:8000/api/assessment/dashboard'),
-        fetch('http://localhost:8000/api/orchestrator/scorecard'),
-        fetch('http://localhost:8000/api/orchestrator/report')
+        fetch(`${baseUrl}/api/assessment/dashboard`),
+        fetch(`${baseUrl}/api/orchestrator/scorecard`),
+        fetch(`${baseUrl}/api/orchestrator/report`)
       ]);
       const sumData = await sumRes.json();
       const ztData = await ztRes.json();
@@ -164,7 +165,7 @@ const Dashboard: React.FC = () => {
         <button onClick={fetchData} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5 active:translate-y-0">
           Refresh Real-time Data
         </button>
-        <button onClick={() => window.open('http://localhost:8000/api/reports/ssp', '_blank')} className="bg-white text-blue-600 border-2 border-blue-600 px-8 py-3 rounded-lg font-bold hover:bg-blue-50 transition transform hover:-translate-y-0.5">
+        <button onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/reports/ssp`, '_blank')} className="bg-white text-blue-600 border-2 border-blue-600 px-8 py-3 rounded-lg font-bold hover:bg-blue-50 transition transform hover:-translate-y-0.5">
           Generate SSP Report
         </button>
       </div>

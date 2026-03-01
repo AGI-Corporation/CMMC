@@ -16,7 +16,8 @@ const AgentFleet: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/nanda/')
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    fetch(`${baseUrl}/api/nanda/`)
       .then(res => res.json())
       .then(data => {
         setAgents(data.agents);
