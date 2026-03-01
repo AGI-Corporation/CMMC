@@ -3,10 +3,11 @@ Database initialization and session management.
 AGI Corporation CMMC Platform 2026
 """
 import os
+import json
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON
-from datetime import datetime
+from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select
+from datetime import datetime, UTC
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cmmc.db")
 
@@ -29,15 +30,15 @@ class ControlRecord(Base):
     __tablename__ = "controls"
     id = Column(String, primary_key=True, index=True)  # e.g. AC.1.001
     domain = Column(String, index=True)
-    level = Column(Integer)
+    level = Column(String)
     title = Column(String)
     description = Column(Text)
     zt_pillar = Column(String)  # User/Device/Network/App/Data/Visibility/Automation
     nist_mapping = Column(String)  # e.g. 3.1.1
     status = Column(String, default="not_implemented")  # implemented/partial/planned/not_implemented
     score_value = Column(Integer, default=1)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 
 class EvidenceRecord(Base):
@@ -54,7 +55,7 @@ class EvidenceRecord(Base):
     reviewer = Column(String)
     review_cycle_days = Column(Integer, default=365)
     metadata_ = Column("metadata", JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class AssessmentRecord(Base):
@@ -67,7 +68,7 @@ class AssessmentRecord(Base):
     notes = Column(Text)
     evidence_ids = Column(JSON, default=list)
     assessor = Column(String)
-    assessment_date = Column(DateTime, default=datetime.utcnow)
+    assessment_date = Column(DateTime, default=lambda: datetime.now(UTC))
     next_review = Column(DateTime)
     poam_required = Column(String, default="false")
 
@@ -82,7 +83,7 @@ class AgentRunRecord(Base):
     findings = Column(JSON, default=dict)
     status = Column(String, default="running")  # running/completed/failed
     mistral_model = Column(String)  # mistral model used for this run
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime)
 
 
@@ -90,6 +91,28 @@ async def init_db():
     """Create all tables on startup."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Seed controls if empty
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(ControlRecord))
+        if not result.scalars().first():
+            schema_path = os.getenv("OSCAL_CATALOG_PATH", "./schema/cmmc_oscal_catalog.json")
+            if os.path.exists(schema_path):
+                with open(schema_path) as f:
+                    data = json.load(f)
+                    controls = data.get("controls", [])
+                    for c in controls:
+                        db_ctrl = ControlRecord(
+                            id=c["id"],
+                            domain=c["domain"],
+                            level=c["level"],
+                            title=c["title"],
+                            description=c["description"],
+                            nist_mapping=c.get("nist_mapping"),
+                            score_value=c.get("weight", 1)
+                        )
+                        session.add(db_ctrl)
+                await session.commit()
 
 
 async def get_db():

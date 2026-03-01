@@ -1,0 +1,103 @@
+{
+  "controls": [
+    {
+      "id": "AC.1.001",
+      "title": "Limit system access to authorized users",
+      "description": "Limit information system access to authorized users, processes acting on behalf of authorized users, and devices (including other information systems).",
+      "domain": "AC",
+      "level": "Level 1",
+      "nist_mapping": "3.1.1",
+      "weight": 5
+    },
+    {
+      "id": "AC.1.002",
+      "title": "Limit system access to types of transactions and functions",
+      "description": "Limit information system access to the types of transactions and functions that authorized users are permitted to execute.",
+      "domain": "AC",
+      "level": "Level 1",
+      "nist_mapping": "3.1.2",
+      "weight": 5
+    },
+    {
+      "id": "AC.2.006",
+      "title": "Limit access to CUI on system media",
+      "description": "Limit access to CUI on system media to authorized users.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.6",
+      "weight": 5
+    },
+    {
+      "id": "AC.2.007",
+      "title": "Employ principle of least privilege",
+      "description": "Employ the principle of least privilege, including for specific duties and information systems privileges.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.7",
+      "weight": 5
+    },
+    {
+      "id": "IA.1.076",
+      "title": "Identify system users",
+      "description": "Identify information system users, processes acting on behalf of users, or devices.",
+      "domain": "IA",
+      "level": "Level 1",
+      "nist_mapping": "3.5.1",
+      "weight": 3
+    },
+    {
+      "id": "IA.3.083",
+      "title": "Multi-factor authentication",
+      "description": "Use multi-factor authentication for local and network access to privileged accounts and for network access to non-privileged accounts.",
+      "domain": "IA",
+      "level": "Level 2",
+      "nist_mapping": "3.5.3",
+      "weight": 5
+    },
+    {
+      "id": "SC.1.175",
+      "title": "Monitor system boundaries",
+      "description": "Monitor, control, and protect organizational communications (i.e., information transmitted or received by organizational information systems) at the external boundaries and key internal boundaries of the information systems.",
+      "domain": "SC",
+      "level": "Level 1",
+      "nist_mapping": "3.13.1",
+      "weight": 3
+    },
+    {
+      "id": "SC.1.176",
+      "title": "Manage individual identifiers",
+      "description": "Manage individual system identifiers for all users and devices.",
+      "domain": "SC",
+      "level": "Level 1",
+      "nist_mapping": "3.13.2",
+      "weight": 3
+    },
+    {
+      "id": "SI.1.210",
+      "title": "Identify, report, and correct information and system flaws",
+      "description": "Identify, report, and correct information and system flaws in a timely manner.",
+      "domain": "SI",
+      "level": "Level 1",
+      "nist_mapping": "3.14.1",
+      "weight": 3
+    },
+    {
+      "id": "MP.1.118",
+      "title": "Sanitize or destroy system media",
+      "description": "Sanitize or destroy system media containing Federal Contract Information before disposal or release for reuse.",
+      "domain": "MP",
+      "level": "Level 1",
+      "nist_mapping": "3.8.3",
+      "weight": 3
+    },
+    {
+      "id": "SC.3.177",
+      "title": "Employ FIPS-validated cryptography",
+      "description": "Employ FIPS-validated cryptography when used to protect the confidentiality of CUI.",
+      "domain": "SC",
+      "level": "Level 2",
+      "nist_mapping": "3.13.11",
+      "weight": 5
+    }
+  ]
+}

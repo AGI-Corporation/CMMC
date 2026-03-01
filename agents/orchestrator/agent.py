@@ -10,16 +10,19 @@ Aligns with DoD ZT Orchestration/Automation pillar and Fulcrum LOE 3/4.
 """
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, List, Any, Optional
 from enum import Enum
 from dataclasses import dataclass, field
-
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from backend.db.database import get_db, AgentRunRecord, ControlRecord, AssessmentRecord
+from sqlalchemy import select, func
 
 class AgentType(str, Enum):
     ICAM = "icam"                     # Identity/Credential/Access Mgmt
-    DATA = "data_protection"           # Data-centric security
-    INFRA = "infrastructure"           # Network/micro-segmentation
+    DATA = "data"                      # Data-centric security
+    INFRA = "infra"                    # Network/micro-segmentation
     DEVSECOPS = "devsecops"            # DevSecOps/supply chain
     GOVERNANCE = "governance"          # Policy/risk/POA&M
     OPS = "operations"                 # IR/SIEM/SOAR
@@ -42,7 +45,7 @@ class Task:
     required_controls: List[str] = field(default_factory=list)
     assigned_agents: List[AgentType] = field(default_factory=list)
     status: str = "pending"           # pending/running/completed/failed
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     completed_at: Optional[datetime] = None
     findings: Dict[str, Any] = field(default_factory=dict)
 
@@ -56,7 +59,7 @@ class ControlStatus:
     confidence: float                  # 0.0-1.0 ZT confidence score
     evidence_ids: List[str] = field(default_factory=list)
     owner_agent: AgentType = AgentType.GOVERNANCE
-    last_updated: datetime = field(default_factory=datetime.utcnow)
+    last_updated: datetime = field(default_factory=lambda: datetime.now(UTC))
     notes: str = ""
 
 
@@ -81,11 +84,16 @@ class ComplianceOrchestrator:
         "Automation & Orchestration": ["IR", "SI", "CA"],
     }
 
-    # SPRS weights per CMMC domain (from NIST 800-171 DoD Assessment Methodology)
-    DOMAIN_WEIGHTS = {
-        "AC": 22, "AU": 9, "CM": 9, "IA": 11, "IR": 3,
-        "MA": 6, "MP": 9, "PS": 2, "PE": 6, "RA": 5,
-        "CA": 4, "SA": 1, "SC": 16, "SI": 7,
+    # SPRS point deductions per control (from DoD assessment methodology)
+    # Total possible score = 110 points
+    SPRS_DEDUCTIONS = {
+        # High value controls (5 points each)
+        "AC.2.006": 5, "AC.2.007": 5, "AC.3.017": 5, "AC.3.018": 5,
+        "IA.3.083": 5, "IA.3.084": 5, "SC.3.177": 5,
+        # Medium value controls (3 points each)
+        "AC.1.001": 3, "AC.1.002": 3, "IA.1.076": 3, "IA.1.077": 3,
+        "SC.1.175": 3, "SC.1.176": 3, "SI.1.210": 3, "SI.1.211": 3,
+        "SI.1.212": 3, "SI.1.213": 3,
     }
 
     def __init__(self):
@@ -123,118 +131,129 @@ class ComplianceOrchestrator:
         self.task_queue.append(task)
         return task
 
-    def update_control(
-        self,
-        control_id: str,
-        zt_pillar: str,
-        status: str,
-        confidence: float,
-        evidence_ids: List[str],
-        owner_agent: AgentType,
-        notes: str = "",
-    ) -> ControlStatus:
-        """Update a control's status from any agent output."""
-        cs = ControlStatus(
-            control_id=control_id,
-            zt_pillar=zt_pillar,
-            status=status,
-            confidence=confidence,
-            evidence_ids=evidence_ids,
-            owner_agent=owner_agent,
-            notes=notes,
+    async def _get_latest_assessments(self, db: AsyncSession):
+        sub_q = (
+            select(
+                AssessmentRecord.control_id,
+                func.max(AssessmentRecord.assessment_date).label("max_date")
+            )
+            .group_by(AssessmentRecord.control_id)
+            .subquery()
         )
-        self.control_registry[control_id] = cs
-        return cs
+        query = (
+            select(AssessmentRecord)
+            .join(
+                sub_q,
+                (AssessmentRecord.control_id == sub_q.c.control_id) &
+                (AssessmentRecord.assessment_date == sub_q.c.max_date)
+            )
+        )
+        result = await db.execute(query)
+        return {a.control_id: a for a in result.scalars().all()}
 
-    def compute_sprs_score(self) -> Dict[str, Any]:
-        """Compute SPRS score from control registry (max 110, floor -203)."""
-        domain_scores = {d: 0 for d in self.DOMAIN_WEIGHTS}
-        domain_totals = {d: 0 for d in self.DOMAIN_WEIGHTS}
-
-        for ctrl_id, cs in self.control_registry.items():
-            domain = ctrl_id.split(".")[0] if "." in ctrl_id else None
-            if domain and domain in domain_scores:
-                domain_totals[domain] += 1
-                if cs.status == "implemented":
-                    domain_scores[domain] += 1
-                elif cs.status == "partial":
-                    domain_scores[domain] += 0.5
-
+    async def compute_sprs_score(self, db: AsyncSession) -> Dict[str, Any]:
+        """Compute SPRS score using methodology from assessment.py."""
+        result = await db.execute(select(ControlRecord))
+        controls = result.scalars().all()
         sprs = 110
-        for domain, weight in self.DOMAIN_WEIGHTS.items():
-            total = domain_totals.get(domain, 1)
-            implemented = domain_scores.get(domain, 0)
-            if total > 0:
-                pct = implemented / total
-                # Each unimplemented control reduces SPRS by its weight / total in domain
-                shortfall = (1 - pct) * weight
-                sprs -= shortfall
+        deductions_list = []
+        implemented_count = not_implemented_count = 0
+
+        assessments_map = await self._get_latest_assessments(db)
+
+        for c in controls:
+            cid = c.id
+            assessment = assessments_map.get(cid)
+            status = assessment.status if assessment else "not_started"
+
+            if status == "implemented":
+                implemented_count += 1
+            elif status in ["not_implemented", "not_started", "partially_implemented"]:
+                not_implemented_count += 1
+                deduction = self.SPRS_DEDUCTIONS.get(cid, 1)
+                sprs -= deduction
+                deductions_list.append({"control_id": cid, "deduction": deduction})
 
         return {
-            "sprs_score": round(max(-203, sprs), 1),
-            "domain_breakdown": {
-                d: {
-                    "implemented": domain_scores[d],
-                    "total": domain_totals.get(d, 0),
-                    "weight": self.DOMAIN_WEIGHTS[d],
-                }
-                for d in self.DOMAIN_WEIGHTS
-            },
+            "sprs_score": max(-203, sprs),
+            "max_score": 110,
+            "controls_assessed": len(controls),
+            "controls_implemented": implemented_count,
+            "controls_not_implemented": not_implemented_count,
+            "deductions": deductions_list
         }
 
-    def compute_zt_scorecard(self) -> List[Dict[str, Any]]:
-        """Generate per-ZT-pillar maturity scorecard."""
+    async def compute_zt_scorecard(self, db: AsyncSession) -> List[Dict[str, Any]]:
+        """Generate per-ZT-pillar maturity scorecard from database."""
         scorecard = []
+        assessments_map = await self._get_latest_assessments(db)
+
         for pillar, domains in self.ZT_DOMAIN_MAP.items():
-            pillar_controls = [
-                cs for ctrl_id, cs in self.control_registry.items()
-                if cs.zt_pillar == pillar or ctrl_id.split(".")[0] in domains
-            ]
-            if not pillar_controls:
+            query = select(ControlRecord).where(ControlRecord.domain.in_(domains))
+            result = await db.execute(query)
+            controls = result.scalars().all()
+
+            if not controls:
                 continue
-            total = len(pillar_controls)
-            implemented = sum(1 for c in pillar_controls if c.status == "implemented")
-            partial = sum(1 for c in pillar_controls if c.status == "partial")
-            avg_confidence = (
-                sum(c.confidence for c in pillar_controls) / total if total > 0 else 0
-            )
+
+            total = len(controls)
+            implemented = 0
+            partial = 0
+            confidences = []
+
+            for c in controls:
+                assessment = assessments_map.get(c.id)
+                if assessment:
+                    status = assessment.status
+                    confidences.append(assessment.confidence)
+                    if status == "implemented":
+                        implemented += 1
+                    elif status == "partially_implemented" or status == "partial":
+                        partial += 1
+                else:
+                    confidences.append(0.0)
+
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+
             scorecard.append({
                 "pillar": pillar,
                 "total_controls": total,
                 "implemented": implemented,
                 "partial": partial,
                 "not_implemented": total - implemented - partial,
-                "maturity_pct": round((implemented + 0.5 * partial) / total * 100, 1),
+                "maturity_pct": round((implemented + 0.5 * partial) / total * 100, 1) if total > 0 else 0,
                 "confidence_avg": round(avg_confidence, 2),
             })
         return scorecard
 
-    def generate_report(self) -> Dict[str, Any]:
+    async def generate_report(self, db: AsyncSession) -> Dict[str, Any]:
         """Generate a complete compliance run report."""
-        sprs_data = self.compute_sprs_score()
-        zt_scorecard = self.compute_zt_scorecard()
-        total = len(self.control_registry)
-        implemented = sum(
-            1 for cs in self.control_registry.values() if cs.status == "implemented"
-        )
+        sprs_data = await self.compute_sprs_score(db)
+        zt_scorecard = await self.compute_zt_scorecard(db)
+
+        runs_query = select(AgentRunRecord).order_by(AgentRunRecord.created_at.desc()).limit(10)
+        runs_result = await db.execute(runs_query)
+        runs = runs_result.scalars().all()
+
         return {
             "report_id": str(uuid.uuid4()),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "sprs_score": sprs_data["sprs_score"],
-            "sprs_domain_breakdown": sprs_data["domain_breakdown"],
+            "sprs_details": sprs_data,
             "zt_scorecard": zt_scorecard,
-            "overall_compliance_pct": round(implemented / total * 100, 1) if total else 0,
-            "total_controls": total,
-            "controls_implemented": implemented,
-            "evidence_artifacts": len(self.evidence_store),
-            "tasks_completed": len(self.completed_tasks),
-            "agent_runs": self.agent_runs,
+            "agent_runs": [
+                {
+                    "agent": r.agent_type,
+                    "status": r.status,
+                    "created_at": r.created_at.isoformat(),
+                    "scope": r.scope
+                }
+                for r in runs
+            ],
         }
 
 
 # FastAPI endpoint integration
-from fastapi import APIRouter
-
 router = APIRouter()
 _orchestrator = ComplianceOrchestrator()
 
@@ -256,15 +275,15 @@ async def create_task(trigger: str, scope: str, controls: str = ""):
 
 
 @router.get("/scorecard", summary="Get ZT pillar compliance scorecard")
-async def get_scorecard():
+async def get_scorecard(db: AsyncSession = Depends(get_db)):
     """Return current ZT pillar maturity scorecard."""
     return {
-        "scorecard": _orchestrator.compute_zt_scorecard(),
-        "sprs": _orchestrator.compute_sprs_score(),
+        "scorecard": await _orchestrator.compute_zt_scorecard(db),
+        "sprs": await _orchestrator.compute_sprs_score(db),
     }
 
 
 @router.get("/report", summary="Generate full compliance run report")
-async def get_report():
+async def get_report(db: AsyncSession = Depends(get_db)):
     """Generate and return a full compliance report."""
-    return _orchestrator.generate_report()
+    return await _orchestrator.generate_report(db)

@@ -6,11 +6,13 @@ Aligns with CMMC CM/SI domains, Fulcrum LOE 2, Cloud Security Playbook Play 19-2
 Responsibilities: container scanning, SBOM generation, pipeline gate evaluation.
 """
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from backend.db.database import get_db, AgentRunRecord
 
 
 class SeverityLevel(str, Enum):
@@ -46,7 +48,7 @@ class DevSecOpsAgent:
             "cve_findings": cves,
             "critical_count": 0, "high_count": len(cves),
             "evidence_id": str(uuid.uuid4()),
-            "scanned_at": datetime.utcnow().isoformat(),
+            "scanned_at": datetime.now(UTC).isoformat(),
             "cmmc_controls": ["SI.1.210", "SI.2.214", "CM.2.061", "CM.3.068"],
             "zt_pillar": "Application",
         }
@@ -70,7 +72,7 @@ class DevSecOpsAgent:
             "high_risk_components": 0,
             "components": components,
             "evidence_id": str(uuid.uuid4()),
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "cmmc_controls": ["CM.2.061", "CM.2.062", "SI.2.214"],
             "zt_pillar": "Application",
         }
@@ -97,10 +99,10 @@ class DevSecOpsAgent:
             "cmmc_controls": ["CM.2.061", "SI.1.210", "SI.2.214", "CM.3.068"],
             "zt_pillar": "Application",
             "evidence_id": str(uuid.uuid4()),
-            "evaluated_at": datetime.utcnow().isoformat(),
+            "evaluated_at": datetime.now(UTC).isoformat(),
         }
 
-    def run_full_assessment(self, service_name: str = "cmmc-api") -> Dict[str, Any]:
+    async def run_full_assessment(self, db: AsyncSession, service_name: str = "cmmc-api", trigger: str = "manual") -> Dict[str, Any]:
         """Run complete DevSecOps assessment pipeline."""
         image_scan = self.scan_container_image(service_name)
         sbom = self.generate_sbom(service_name)
@@ -110,7 +112,8 @@ class DevSecOpsAgent:
             + pipeline["confidence_score"] * 0.4
             + (1.0 if sbom["high_risk_components"] == 0 else 0.7) * 0.2
         )
-        return {
+        status = "implemented" if confidence >= 0.9 else "partially_implemented"
+        result = {
             "agent": "devsecops",
             "service": service_name,
             "zt_pillar": "Application",
@@ -118,8 +121,26 @@ class DevSecOpsAgent:
             "image_scan": image_scan,
             "sbom": sbom,
             "pipeline_gates": pipeline,
-            "timestamp": datetime.utcnow().isoformat(),
+            "status": status,
+            "timestamp": datetime.now(UTC).isoformat(),
         }
+
+        # Persist result
+        record = AgentRunRecord(
+            id=str(uuid.uuid4()),
+            agent_type="devsecops",
+            trigger=trigger,
+            scope=service_name,
+            controls_evaluated=list(set(image_scan["cmmc_controls"] + sbom["cmmc_controls"] + pipeline["cmmc_controls"])),
+            findings=result,
+            status="completed",
+            created_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC)
+        )
+        db.add(record)
+        await db.commit()
+
+        return result
 
 
 router = APIRouter()
@@ -127,9 +148,9 @@ _dso = DevSecOpsAgent()
 
 
 @router.get("/assess/{service_name}", summary="Run full DevSecOps ZT Application assessment")
-async def assess_service(service_name: str):
+async def assess_service(service_name: str, db: AsyncSession = Depends(get_db)):
     """Container scan + SBOM + pipeline gates - ZT Application Pillar evidence."""
-    return _dso.run_full_assessment(service_name)
+    return await _dso.run_full_assessment(db, service_name)
 
 
 @router.post("/scan-image", summary="Scan container image for CVEs")

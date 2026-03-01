@@ -2,11 +2,16 @@
 Assessment Router - SPRS score calculation and compliance dashboard.
 These endpoints become MCP tools: calculate_sprs_score, get_compliance_dashboard.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Dict, List, Optional
-import json
 import os
+import uuid
+from datetime import datetime, UTC
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+
+from backend.db.database import get_db, ControlRecord, AssessmentRecord, AgentRunRecord
 
 router = APIRouter()
 
@@ -50,6 +55,25 @@ class SPRSResult(BaseModel):
     certification_level: str
     assessment_date: str
 
+async def get_latest_assessments(db: AsyncSession):
+    sub_q = (
+        select(
+            AssessmentRecord.control_id,
+            func.max(AssessmentRecord.assessment_date).label("max_date")
+        )
+        .group_by(AssessmentRecord.control_id)
+        .subquery()
+    )
+    query = (
+        select(AssessmentRecord)
+        .join(
+            sub_q,
+            (AssessmentRecord.control_id == sub_q.c.control_id) &
+            (AssessmentRecord.assessment_date == sub_q.c.max_date)
+        )
+    )
+    result = await db.execute(query)
+    return {a.control_id: a for a in result.scalars().all()}
 
 @router.get(
     "/dashboard",
@@ -57,20 +81,24 @@ class SPRSResult(BaseModel):
     summary="Get Compliance Dashboard",
     description="Get overall CMMC compliance posture summary including implementation percentages, SPRS score, and breakdown by domain and level."
 )
-async def get_compliance_dashboard():
-    from backend.routers.controls import _assessment_store, load_controls
-    controls = load_controls()
+async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ControlRecord))
+    controls = result.scalars().all()
+
+    assessments_map = await get_latest_assessments(db)
     
     by_domain = {}
-    by_level = {"Level 1": {"total": 0, "implemented": 0}, "Level 2": {"total": 0, "implemented": 0}}
+    by_level = {"Level 1": {"total": 0, "implemented": 0}, "Level 2": {"total": 0, "implemented": 0}, "Level 3": {"total": 0, "implemented": 0}}
     implemented = not_implemented = partial = not_started = not_applicable = 0
     sprs_score = 110  # Start at max, deduct for non-implemented
 
     for c in controls:
-        domain = c["domain"]
-        level = c["level"]
-        cid = c["id"]
-        status = _assessment_store.get(cid, {}).get("status", "not_started")
+        domain = c.domain
+        level = c.level
+        cid = c.id
+
+        assessment = assessments_map.get(cid)
+        status = assessment.status if assessment else "not_started"
 
         if domain not in by_domain:
             by_domain[domain] = {"total": 0, "implemented": 0, "not_implemented": 0}
@@ -88,7 +116,7 @@ async def get_compliance_dashboard():
             by_domain[domain]["not_implemented"] += 1
             deduction = SPRS_DEDUCTIONS.get(cid, 1)
             sprs_score -= deduction
-        elif status == "partially_implemented":
+        elif status == "partially_implemented" or status == "partial":
             partial += 1
         elif status == "not_applicable":
             not_applicable += 1
@@ -128,20 +156,24 @@ async def get_compliance_dashboard():
     summary="Calculate SPRS Score",
     description="Calculate the DoD Supplier Performance Risk System (SPRS) score based on current control implementation status. Score ranges from -203 to 110."
 )
-async def calculate_sprs_score():
-    from backend.routers.controls import _assessment_store, load_controls
-    import datetime
-    controls = load_controls()
+async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ControlRecord))
+    controls = result.scalars().all()
+
+    assessments_map = await get_latest_assessments(db)
+
     sprs = 110
     deductions_list = []
     implemented_count = not_implemented_count = 0
 
     for c in controls:
-        cid = c["id"]
-        status = _assessment_store.get(cid, {}).get("status", "not_started")
+        cid = c.id
+        assessment = assessments_map.get(cid)
+        status = assessment.status if assessment else "not_started"
+
         if status == "implemented":
             implemented_count += 1
-        elif status in ["not_implemented", "not_started"]:
+        elif status in ["not_implemented", "not_started", "partially_implemented", "partial"]:
             not_implemented_count += 1
             deduction = SPRS_DEDUCTIONS.get(cid, 1)
             sprs -= deduction
@@ -164,5 +196,96 @@ async def calculate_sprs_score():
         controls_not_implemented=not_implemented_count,
         deductions=deductions_list,
         certification_level=cert_level,
-        assessment_date=datetime.date.today().isoformat()
+        assessment_date=datetime.now(UTC).date().isoformat()
     )
+
+@router.post("/promote/{run_id}", summary="Promote agent findings to official assessment records")
+async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Convert an agent execution run into official assessment records."""
+    query = select(AgentRunRecord).where(AgentRunRecord.id == run_id)
+    result = await db.execute(query)
+    run = result.scalar_one_or_none()
+
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
+
+    findings = run.findings
+    promoted_count = 0
+
+    # Logic for ICAM promotion
+    if run.agent_type == "icam":
+        results = findings.get("results", [])
+        for res in results:
+            new_ass = AssessmentRecord(
+                id=str(uuid.uuid4()),
+                control_id=res["control_id"],
+                status=res["status"],
+                confidence=res["confidence"],
+                notes=f"Promoted from {run.agent_type} agent run {run_id}. Findings: {', '.join(res['findings'])}",
+                evidence_ids=[res["evidence_id"]],
+                assessor=f"Agent: {run.agent_type}",
+                assessment_date=datetime.now(UTC),
+                poam_required="true" if res["status"] in ["partial", "not_implemented", "partially_implemented"] else "false"
+            )
+            db.add(new_ass)
+            promoted_count += 1
+
+    # Logic for DevSecOps promotion
+    elif run.agent_type == "devsecops":
+        controls = run.controls_evaluated
+        overall_conf = findings.get("overall_confidence", 0.0)
+        status = findings.get("status", "partially_implemented")
+
+        for cid in controls:
+            new_ass = AssessmentRecord(
+                id=str(uuid.uuid4()),
+                control_id=cid,
+                status=status,
+                confidence=overall_conf,
+                notes=f"Promoted from {run.agent_type} agent run {run_id} for service {findings.get('service')}.",
+                evidence_ids=[findings.get("image_scan", {}).get("evidence_id")],
+                assessor=f"Agent: {run.agent_type}",
+                assessment_date=datetime.now(UTC),
+                poam_required="true" if status in ["partial", "not_implemented", "partially_implemented"] else "false"
+            )
+            db.add(new_ass)
+            promoted_count += 1
+
+    # Logic for Infra agent promotion
+    elif run.agent_type == "infra":
+        agent_findings = findings.get("findings", [])
+        for f in agent_findings:
+            new_ass = AssessmentRecord(
+                id=str(uuid.uuid4()),
+                control_id=f["control_id"],
+                status=f["status"],
+                confidence=f["confidence"],
+                notes=f"Promoted from {run.agent_type} agent run {run_id}. Finding: {f['finding']}",
+                evidence_ids=[findings.get("evidence_id")],
+                assessor=f"Agent: {run.agent_type}",
+                assessment_date=datetime.now(UTC),
+                poam_required="true" if f["status"] in ["partial", "not_implemented", "partially_implemented"] else "false"
+            )
+            db.add(new_ass)
+            promoted_count += 1
+
+    # Logic for Data agent promotion
+    elif run.agent_type == "data":
+        agent_findings = findings.get("findings", [])
+        for f in agent_findings:
+            new_ass = AssessmentRecord(
+                id=str(uuid.uuid4()),
+                control_id=f["control_id"],
+                status=f["status"],
+                confidence=f["confidence"],
+                notes=f"Promoted from {run.agent_type} agent run {run_id}. Finding: {f['finding']}",
+                evidence_ids=[findings.get("evidence_id")],
+                assessor=f"Agent: {run.agent_type}",
+                assessment_date=datetime.now(UTC),
+                poam_required="true" if f["status"] in ["partial", "not_implemented", "partially_implemented"] else "false"
+            )
+            db.add(new_ass)
+            promoted_count += 1
+
+    await db.commit()
+    return {"status": "promoted", "run_id": run_id, "assessments_created": promoted_count}
