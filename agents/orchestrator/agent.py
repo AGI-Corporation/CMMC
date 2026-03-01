@@ -16,8 +16,13 @@ from enum import Enum
 from dataclasses import dataclass, field
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import get_db, AgentRunRecord, ControlRecord, AssessmentRecord
+from backend.db.database import get_db, AgentRunRecord, ControlRecord, AssessmentRecord, get_latest_assessments, generate_fingerprint
 from sqlalchemy import select, func
+from agents.mistral_agent.agent import agent as mistral_agent
+from agents.icam_agent.agent import _icam
+from agents.devsecops_agent.agent import _dso
+from agents.infra_agent.agent import _infra
+from agents.data_agent.agent import _data
 
 class AgentType(str, Enum):
     ICAM = "icam"                     # Identity/Credential/Access Mgmt
@@ -131,26 +136,6 @@ class ComplianceOrchestrator:
         self.task_queue.append(task)
         return task
 
-    async def _get_latest_assessments(self, db: AsyncSession):
-        sub_q = (
-            select(
-                AssessmentRecord.control_id,
-                func.max(AssessmentRecord.assessment_date).label("max_date")
-            )
-            .group_by(AssessmentRecord.control_id)
-            .subquery()
-        )
-        query = (
-            select(AssessmentRecord)
-            .join(
-                sub_q,
-                (AssessmentRecord.control_id == sub_q.c.control_id) &
-                (AssessmentRecord.assessment_date == sub_q.c.max_date)
-            )
-        )
-        result = await db.execute(query)
-        return {a.control_id: a for a in result.scalars().all()}
-
     async def compute_sprs_score(self, db: AsyncSession) -> Dict[str, Any]:
         """Compute SPRS score using methodology from assessment.py."""
         result = await db.execute(select(ControlRecord))
@@ -159,7 +144,7 @@ class ComplianceOrchestrator:
         deductions_list = []
         implemented_count = not_implemented_count = 0
 
-        assessments_map = await self._get_latest_assessments(db)
+        assessments_map = await get_latest_assessments(db)
 
         for c in controls:
             cid = c.id
@@ -186,7 +171,7 @@ class ComplianceOrchestrator:
     async def compute_zt_scorecard(self, db: AsyncSession) -> List[Dict[str, Any]]:
         """Generate per-ZT-pillar maturity scorecard from database."""
         scorecard = []
-        assessments_map = await self._get_latest_assessments(db)
+        assessments_map = await get_latest_assessments(db)
 
         for pillar, domains in self.ZT_DOMAIN_MAP.items():
             query = select(ControlRecord).where(ControlRecord.domain.in_(domains))
@@ -289,3 +274,79 @@ async def get_scorecard(db: AsyncSession = Depends(get_db)):
 async def get_report(db: AsyncSession = Depends(get_db)):
     """Generate and return a full compliance report."""
     return await _orchestrator.generate_report(db)
+
+
+@router.post("/run", summary="Trigger a full orchestrated compliance assessment")
+async def trigger_full_run(db: AsyncSession = Depends(get_db)):
+    """
+    Executes a full compliance assessment across all specialist agents.
+    1. Triggers ICAM, DevSecOps, Infrastructure, and Data agents.
+    2. Aggregates results.
+    3. Generates an AI summary using Mistral.
+    4. Persists the orchestrated run record.
+    """
+    # 1. Run specialist agents
+    icam_results = await _icam.run_full_assessment(db, trigger="orchestrated")
+    dso_results = await _dso.run_full_assessment(db, trigger="orchestrated")
+    infra_results = await _infra.run_full_assessment(db, trigger="orchestrated")
+    data_results = await _data.run_full_assessment(db, trigger="orchestrated")
+
+    # 2. Compute scores
+    sprs = await _orchestrator.compute_sprs_score(db)
+    scorecard = await _orchestrator.compute_zt_scorecard(db)
+
+    # 3. Generate AI Summary with Mistral
+    summary_context = f"""
+    Assessment completed.
+    SPRS Score: {sprs['sprs_score']}
+    ZT Maturity Scorecard: {json.dumps(scorecard)}
+    Specialist Findings:
+    - ICAM: {len(icam_results)} controls assessed.
+    - DevSecOps: {dso_results.get('status')} implementation.
+    - Infrastructure: {len(infra_results.get('findings', []))} findings.
+    - Data: {len(data_results.get('findings', []))} findings.
+    """
+
+    ai_summary = await mistral_agent.answer_compliance_question(
+        "Generate a 2-sentence executive summary of this compliance assessment run.",
+        context=summary_context
+    )
+
+    # 4. Record Orchestrator Run
+    run_id = str(uuid.uuid4())
+    orchestrator_run = AgentRunRecord(
+        id=run_id,
+        agent_type="orchestrator",
+        trigger="manual",
+        scope="Full System Assessment",
+        controls_evaluated=list(set(
+            [r["control_id"] for r in icam_results] +
+            dso_results.get("controls_evaluated", []) +
+            [f["control_id"] for f in infra_results.get("findings", [])] +
+            [f["control_id"] for f in data_results.get("findings", [])]
+        )),
+        findings={
+            "ai_summary": ai_summary,
+            "sprs": sprs,
+            "scorecard": scorecard,
+            "agent_runs": {
+                "icam": icam_results,
+                "devsecops": dso_results,
+                "infra": infra_results,
+                "data": data_results
+            }
+        },
+        status="completed",
+        created_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
+        fingerprint=generate_fingerprint({"ai_summary": ai_summary, "sprs": sprs["sprs_score"]})
+    )
+    db.add(orchestrator_run)
+    await db.commit()
+
+    return {
+        "run_id": run_id,
+        "status": "completed",
+        "ai_summary": ai_summary,
+        "sprs_score": sprs["sprs_score"]
+    }

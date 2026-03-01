@@ -8,7 +8,7 @@ import hashlib
 from typing import Any
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select
+from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select, func
 from datetime import datetime, UTC
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cmmc.db")
@@ -123,6 +123,32 @@ async def init_db():
                         )
                         session.add(db_ctrl)
                 await session.commit()
+
+
+async def get_latest_assessments(db: AsyncSession):
+    """Fetch the most recent assessment for each control ID."""
+    # Subquery for latest assessment date per control_id
+    sub_q = (
+        select(
+            AssessmentRecord.control_id,
+            func.max(AssessmentRecord.assessment_date).label("max_date")
+        )
+        .group_by(AssessmentRecord.control_id)
+        .subquery()
+    )
+
+    # Join with the original table to get full records
+    query = (
+        select(AssessmentRecord)
+        .join(
+            sub_q,
+            (AssessmentRecord.control_id == sub_q.c.control_id) &
+            (AssessmentRecord.assessment_date == sub_q.c.max_date)
+        )
+    )
+
+    result = await db.execute(query)
+    return {a.control_id: a for a in result.scalars().all()}
 
 
 async def get_db():

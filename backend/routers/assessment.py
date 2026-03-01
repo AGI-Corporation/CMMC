@@ -11,7 +11,7 @@ from datetime import datetime, UTC
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from backend.db.database import get_db, ControlRecord, AssessmentRecord, AgentRunRecord
+from backend.db.database import get_db, ControlRecord, AssessmentRecord, AgentRunRecord, get_latest_assessments
 
 router = APIRouter()
 
@@ -54,26 +54,6 @@ class SPRSResult(BaseModel):
     deductions: List[dict]
     certification_level: str
     assessment_date: str
-
-async def get_latest_assessments(db: AsyncSession):
-    sub_q = (
-        select(
-            AssessmentRecord.control_id,
-            func.max(AssessmentRecord.assessment_date).label("max_date")
-        )
-        .group_by(AssessmentRecord.control_id)
-        .subquery()
-    )
-    query = (
-        select(AssessmentRecord)
-        .join(
-            sub_q,
-            (AssessmentRecord.control_id == sub_q.c.control_id) &
-            (AssessmentRecord.assessment_date == sub_q.c.max_date)
-        )
-    )
-    result = await db.execute(query)
-    return {a.control_id: a for a in result.scalars().all()}
 
 @router.get(
     "/dashboard",

@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import AgentFleet from './AgentFleet';
 import ProvenanceDetail from './ProvenanceDetail';
 import ComplianceAdvisor from './ComplianceAdvisor';
+import ControlExplorer from './ControlExplorer';
 
 export interface DashboardSummary {
   total_controls: number;
@@ -32,6 +33,7 @@ const Dashboard: React.FC = () => {
   const [ztScorecard, setZtScorecard] = useState<ZTPillarScore[]>([]);
   const [recentRuns, setRecentRuns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRunningAssessment, setIsRunningAssessment] = useState(false);
 
   const fetchData = async () => {
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -51,6 +53,23 @@ const Dashboard: React.FC = () => {
       console.error('Error fetching dashboard data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRunAssessment = async () => {
+    setIsRunningAssessment(true);
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    try {
+      const res = await fetch(`${baseUrl}/api/orchestrator/run`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        await fetchData(); // Refresh all data
+      }
+    } catch (error) {
+      console.error('Error running assessment:', error);
+    } finally {
+      setIsRunningAssessment(false);
     }
   };
 
@@ -162,13 +181,30 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="flex gap-4">
-        <button onClick={fetchData} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-blue-700 transition transform hover:-translate-y-0.5 active:translate-y-0">
-          Refresh Real-time Data
+        <button
+          onClick={handleRunAssessment}
+          disabled={isRunningAssessment}
+          className={`${isRunningAssessment ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'} text-white px-8 py-3 rounded-lg font-bold shadow-lg transition transform hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-2`}
+        >
+          {isRunningAssessment ? (
+            <>
+              <svg className="animate-spin h-5 w-5 mr-3 text-white" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Running...
+            </>
+          ) : 'Trigger Full Assessment'}
         </button>
-        <button onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/reports/ssp`, '_blank')} className="bg-white text-blue-600 border-2 border-blue-600 px-8 py-3 rounded-lg font-bold hover:bg-blue-50 transition transform hover:-translate-y-0.5">
+        <button onClick={fetchData} className="bg-white text-gray-700 border border-gray-300 px-8 py-3 rounded-lg font-bold hover:bg-gray-50 transition transform hover:-translate-y-0.5">
+          Refresh Dashboard
+        </button>
+        <button onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/reports/ssp`, '_blank')} className="bg-white text-blue-600 border-2 border-blue-600 px-8 py-3 rounded-lg font-bold hover:bg-blue-50 transition transform hover:-translate-y-0.5 ml-auto">
           Generate SSP Report
         </button>
       </div>
+
+      <ControlExplorer />
     </div>
   );
 };
