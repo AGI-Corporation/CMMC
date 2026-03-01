@@ -35,7 +35,6 @@ async def list_controls(
         query = query.where(ControlRecord.domain == domain.value)
 
     # Efficiently get latest assessments for all relevant controls
-    # 1. Subquery for latest assessment date per control_id
     sub_q = (
         select(
             AssessmentRecord.control_id,
@@ -45,7 +44,6 @@ async def list_controls(
         .subquery()
     )
 
-    # 2. Query for full assessment records
     assessments_q = (
         select(AssessmentRecord)
         .join(
@@ -55,7 +53,6 @@ async def list_controls(
         )
     )
 
-    # Execute both
     ctrl_result = await db.execute(query)
     controls_data = ctrl_result.scalars().all()
 
@@ -81,8 +78,10 @@ async def list_controls(
                 weight=c.score_value
             ),
             implementation_status=impl_status,
-            evidence_count=len(assessment.evidence_ids) if assessment and assessment.evidence_ids else 0,
-            notes=assessment.notes if assessment else None
+            evidence_count=len(assessment.evidence_ids) if assessment and isinstance(assessment.evidence_ids, list) else 0,
+            notes=assessment.notes if assessment else None,
+            confidence=assessment.confidence if assessment else 0.0,
+            poam_required=(assessment.poam_required == "true") if assessment else False
         ))
 
     return ControlListResponse(controls=responses, total=len(responses), level_filter=level, domain_filter=domain)
@@ -117,8 +116,10 @@ async def get_control_detail(control_id: str, db: AsyncSession = Depends(get_db)
             weight=c.score_value
         ),
         implementation_status=assessment.status if assessment else "not_started",
-        evidence_count=len(assessment.evidence_ids) if assessment and assessment.evidence_ids else 0,
-        notes=assessment.notes if assessment else None
+        evidence_count=len(assessment.evidence_ids) if assessment and isinstance(assessment.evidence_ids, list) else 0,
+        notes=assessment.notes if assessment else None,
+        confidence=assessment.confidence if assessment else 0.0,
+        poam_required=(assessment.poam_required == "true") if assessment else False
     )
 
 
@@ -137,7 +138,7 @@ async def update_control_status(control_id: str, update: ControlUpdate, db: Asyn
         raise HTTPException(status_code=404, detail=f"Control {control_id} not found")
 
     import uuid
-    from datetime import datetime
+    from datetime import datetime, UTC
 
     new_assessment = AssessmentRecord(
         id=str(uuid.uuid4()),
@@ -146,7 +147,10 @@ async def update_control_status(control_id: str, update: ControlUpdate, db: Asyn
         notes=update.notes,
         assessor=update.responsible_party,
         next_review=update.target_completion_date,
-        assessment_date=datetime.utcnow()
+        assessment_date=datetime.now(UTC),
+        evidence_ids=update.evidence_ids or [],
+        confidence=update.confidence or 0.0,
+        poam_required="true" if update.poam_required else "false"
     )
     db.add(new_assessment)
     await db.commit()
@@ -162,7 +166,9 @@ async def update_control_status(control_id: str, update: ControlUpdate, db: Asyn
             weight=c.score_value
         ),
         implementation_status=update.implementation_status,
-        notes=update.notes
+        notes=update.notes,
+        confidence=new_assessment.confidence,
+        poam_required=update.poam_required
     )
 
 

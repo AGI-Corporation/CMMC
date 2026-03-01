@@ -10,7 +10,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List, Dict, Any
-from datetime import datetime, date
+from datetime import datetime, date, UTC
 import csv
 import io
 import json
@@ -73,7 +73,7 @@ async def generate_ssp(
 ## {system_name}
 
 **Classification:** {classification}  
-**Generated:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  
+**Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
 **Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
 **SPRS Score Estimate:** {sprs_estimate}  
 
@@ -209,7 +209,7 @@ async def get_dashboard(
 
     return {
         "system": "AGI Corp CMMC System",
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "sprs_score": sprs_score,
         "total_controls": total_controls,
         "assessed_controls": total_assessed,

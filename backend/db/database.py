@@ -7,7 +7,7 @@ import json
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select
-from datetime import datetime
+from datetime import datetime, UTC
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cmmc.db")
 
@@ -37,8 +37,8 @@ class ControlRecord(Base):
     nist_mapping = Column(String)  # e.g. 3.1.1
     status = Column(String, default="not_implemented")  # implemented/partial/planned/not_implemented
     score_value = Column(Integer, default=1)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 
 class EvidenceRecord(Base):
@@ -55,7 +55,7 @@ class EvidenceRecord(Base):
     reviewer = Column(String)
     review_cycle_days = Column(Integer, default=365)
     metadata_ = Column("metadata", JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class AssessmentRecord(Base):
@@ -68,7 +68,7 @@ class AssessmentRecord(Base):
     notes = Column(Text)
     evidence_ids = Column(JSON, default=list)
     assessor = Column(String)
-    assessment_date = Column(DateTime, default=datetime.utcnow)
+    assessment_date = Column(DateTime, default=lambda: datetime.now(UTC))
     next_review = Column(DateTime)
     poam_required = Column(String, default="false")
 
@@ -83,7 +83,7 @@ class AgentRunRecord(Base):
     findings = Column(JSON, default=dict)
     status = Column(String, default="running")  # running/completed/failed
     mistral_model = Column(String)  # mistral model used for this run
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime)
 
 

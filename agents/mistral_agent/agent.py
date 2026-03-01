@@ -9,7 +9,7 @@ implementation evidence, and produce POAM recommendations.
 import os
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional, List, Dict, Any
 from mistralai import Mistral
 from pydantic import BaseModel
@@ -93,8 +93,8 @@ class MistralComplianceAgent:
             findings=findings,
             status=status,
             mistral_model=self.model,
-            created_at=datetime.utcnow(),
-            completed_at=datetime.utcnow()
+            created_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC)
         )
         db.add(record)
         await db.commit()

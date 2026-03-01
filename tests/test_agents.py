@@ -1,9 +1,10 @@
 
 import pytest
 import os
+import json
 from httpx import AsyncClient, ASGITransport
 from backend.main import app
-from backend.db.database import init_db, engine, Base
+from backend.db.database import init_db, engine, Base, AsyncSessionLocal
 
 @pytest.fixture(scope="session")
 def anyio_backend():
@@ -48,7 +49,6 @@ async def test_orchestrator_scorecard():
 
 @pytest.mark.anyio
 async def test_mistral_gap_analysis_mock():
-    # Mistral API key is likely missing in tests, so it should return mock response
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         req = {
             "control_id": "AC.1.001",
@@ -60,6 +60,34 @@ async def test_mistral_gap_analysis_mock():
     assert response.status_code == 200
     data = response.json()
     assert "analysis" in data
-    # If API key is missing, it should have our mock summary
     if not os.getenv("MISTRAL_API_KEY"):
         assert "Mock analysis" in data["analysis"]["gap_summary"]
+
+@pytest.mark.anyio
+async def test_agent_run_promotion():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # 1. Trigger an agent run (ICAM)
+        assess_resp = await ac.get("/api/agents/icam/assess")
+        assert assess_resp.status_code == 200
+
+        # 2. Get the run ID from the database
+        from backend.db.database import AgentRunRecord
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(select(AgentRunRecord).order_by(AgentRunRecord.created_at.desc()))
+            run = res.scalars().first()
+            run_id = run.id
+
+        # 3. Promote the run
+        promote_resp = await ac.post(f"/api/assessment/promote/{run_id}")
+        assert promote_resp.status_code == 200
+        assert promote_resp.json()["status"] == "promoted"
+        assert promote_resp.json()["assessments_created"] > 0
+
+        # 4. Verify assessment exists for one of the controls
+        # ICAM evaluates IA.3.083
+        detail_resp = await ac.get("/api/controls/IA.3.083")
+        assert detail_resp.status_code == 200
+        data = detail_resp.json()
+        assert data["implementation_status"] == "partially_implemented"
+        assert "Promoted from icam" in data["notes"]

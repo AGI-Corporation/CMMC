@@ -10,7 +10,7 @@ Aligns with DoD ZT Orchestration/Automation pillar and Fulcrum LOE 3/4.
 """
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, List, Any, Optional
 from enum import Enum
 from dataclasses import dataclass, field
@@ -45,7 +45,7 @@ class Task:
     required_controls: List[str] = field(default_factory=list)
     assigned_agents: List[AgentType] = field(default_factory=list)
     status: str = "pending"           # pending/running/completed/failed
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     completed_at: Optional[datetime] = None
     findings: Dict[str, Any] = field(default_factory=dict)
 
@@ -59,7 +59,7 @@ class ControlStatus:
     confidence: float                  # 0.0-1.0 ZT confidence score
     evidence_ids: List[str] = field(default_factory=list)
     owner_agent: AgentType = AgentType.GOVERNANCE
-    last_updated: datetime = field(default_factory=datetime.utcnow)
+    last_updated: datetime = field(default_factory=lambda: datetime.now(UTC))
     notes: str = ""
 
 
@@ -237,7 +237,7 @@ class ComplianceOrchestrator:
 
         return {
             "report_id": str(uuid.uuid4()),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "sprs_score": sprs_data["sprs_score"],
             "sprs_details": sprs_data,
             "zt_scorecard": zt_scorecard,

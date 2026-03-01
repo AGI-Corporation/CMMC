@@ -63,3 +63,44 @@ async def test_update_and_score():
         data = response.json()
         # AC.1.001 has deduction 3.
         assert data["sprs_score"] == initial_score + 3
+
+@pytest.mark.anyio
+async def test_reports():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # 1. Check dashboard
+        resp = await ac.get("/api/reports/dashboard")
+        assert resp.status_code == 200
+
+        # 2. Check SSP
+        resp = await ac.get("/api/reports/ssp")
+        assert resp.status_code == 200
+        assert "# System Security Plan" in resp.text
+
+        # 3. Check POAM
+        resp = await ac.get("/api/reports/poam")
+        assert resp.status_code == 200
+        assert "Control ID,Domain" in resp.text
+
+@pytest.mark.anyio
+async def test_update_with_advanced_fields():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        update_data = {
+            "implementation_status": "implemented",
+            "notes": "Advanced update",
+            "responsible_party": "Tester",
+            "confidence": 0.95,
+            "poam_required": False,
+            "evidence_ids": ["ev-123"]
+        }
+        patch_response = await ac.patch("/api/controls/AC.1.002", json=update_data)
+        assert patch_response.status_code == 200
+        data = patch_response.json()
+        assert data["confidence"] == 0.95
+        assert data["poam_required"] == False
+
+        # Verify detail endpoint reflects these
+        detail_response = await ac.get("/api/controls/AC.1.002")
+        data = detail_response.json()
+        assert data["confidence"] == 0.95
+        assert data["evidence_count"] == 1
+        assert data["poam_required"] == False

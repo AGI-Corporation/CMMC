@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import datetime
+from datetime import datetime, UTC
 
 from backend.db.database import get_db, EvidenceRecord
 from backend.models.evidence import EvidenceCreate, EvidenceResponse, EvidenceListResponse
@@ -42,7 +42,7 @@ async def create_evidence(
         reviewer=evidence.reviewer,
         review_cycle_days=evidence.review_cycle_days,
         metadata_=evidence.metadata or {},
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
     db.add(record)
     await db.flush()

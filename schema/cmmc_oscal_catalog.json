@@ -28,6 +28,15 @@
       "weight": 5
     },
     {
+      "id": "AC.2.007",
+      "title": "Employ principle of least privilege",
+      "description": "Employ the principle of least privilege, including for specific duties and information systems privileges.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.7",
+      "weight": 5
+    },
+    {
       "id": "IA.1.076",
       "title": "Identify system users",
       "description": "Identify information system users, processes acting on behalf of users, or devices.",
@@ -37,12 +46,30 @@
       "weight": 3
     },
     {
+      "id": "IA.3.083",
+      "title": "Multi-factor authentication",
+      "description": "Use multi-factor authentication for local and network access to privileged accounts and for network access to non-privileged accounts.",
+      "domain": "IA",
+      "level": "Level 2",
+      "nist_mapping": "3.5.3",
+      "weight": 5
+    },
+    {
       "id": "SC.1.175",
       "title": "Monitor system boundaries",
       "description": "Monitor, control, and protect organizational communications (i.e., information transmitted or received by organizational information systems) at the external boundaries and key internal boundaries of the information systems.",
       "domain": "SC",
       "level": "Level 1",
       "nist_mapping": "3.13.1",
+      "weight": 3
+    },
+    {
+      "id": "SI.1.210",
+      "title": "Identify, report, and correct information and system flaws",
+      "description": "Identify, report, and correct information and system flaws in a timely manner.",
+      "domain": "SI",
+      "level": "Level 1",
+      "nist_mapping": "3.14.1",
       "weight": 3
     }
   ]

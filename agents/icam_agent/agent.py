@@ -6,7 +6,7 @@ Maps to DoD ZT User Pillar and CMMC Access Control (AC) / Identification &
 Authentication (IA) domains. Implements Fulcrum LOE 1 - Identity management.
 """
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from fastapi import APIRouter, Depends
@@ -45,7 +45,7 @@ class ICAMAssessmentResult:
     findings: List[str]
     evidence_id: str
     remediation: List[str]
-    assessed_at: datetime = field(default_factory=datetime.utcnow)
+    assessed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class ICAMAgent:
@@ -66,17 +66,17 @@ class ICAMAgent:
                 user_id="u001", username="alice.admin",
                 roles=["SystemAdmin", "CUI_Handler"],
                 mfa_enabled=True, mfa_type="fido2",
-                last_login=datetime.utcnow() - timedelta(days=1),
+                last_login=datetime.now(UTC) - timedelta(days=1),
                 account_status="active", privileged=True,
-                department="IT", last_access_review=datetime.utcnow() - timedelta(days=30),
+                department="IT", last_access_review=datetime.now(UTC) - timedelta(days=30),
             ),
             UserRecord(
                 user_id="u002", username="bob.dev",
                 roles=["Developer"],
                 mfa_enabled=True, mfa_type="totp",
-                last_login=datetime.utcnow() - timedelta(days=2),
+                last_login=datetime.now(UTC) - timedelta(days=2),
                 account_status="active", privileged=False,
-                department="Engineering", last_access_review=datetime.utcnow() - timedelta(days=60),
+                department="Engineering", last_access_review=datetime.now(UTC) - timedelta(days=60),
             ),
             UserRecord(
                 user_id="u003", username="carol.svc",
@@ -90,9 +90,9 @@ class ICAMAgent:
                 user_id="u004", username="dave.old",
                 roles=["Developer"],
                 mfa_enabled=False, mfa_type="none",
-                last_login=datetime.utcnow() - timedelta(days=200),
+                last_login=datetime.now(UTC) - timedelta(days=200),
                 account_status="active", privileged=False,
-                department="Engineering", last_access_review=datetime.utcnow() - timedelta(days=400),
+                department="Engineering", last_access_review=datetime.now(UTC) - timedelta(days=400),
             ),
         ]
 
@@ -118,7 +118,7 @@ class ICAMAgent:
 
         confidence = (coverage_pct * 0.5 + privileged_coverage * 0.5)
         status = "implemented" if confidence >= 0.95 else (
-            "partial" if confidence >= 0.5 else "not_implemented"
+            "partially_implemented" if confidence >= 0.5 else "not_implemented"
         )
 
         return ICAMAssessmentResult(
@@ -134,12 +134,12 @@ class ICAMAgent:
         """Assess AC.2.007 - Principle of least privilege."""
         stale_accounts = [
             u for u in self.users
-            if u.last_login and (datetime.utcnow() - u.last_login).days > 90
+            if u.last_login and (datetime.now(UTC) - u.last_login).days > 90
         ]
         unreviewed = [
             u for u in self.users
             if not u.last_access_review
-            or (datetime.utcnow() - u.last_access_review).days > 365
+            or (datetime.now(UTC) - u.last_access_review).days > 365
         ]
 
         findings = []
@@ -153,7 +153,7 @@ class ICAMAgent:
 
         confidence = max(0.0, 1.0 - (len(stale_accounts) + len(unreviewed)) / max(len(self.users), 1) * 0.5)
         status = "implemented" if confidence >= 0.9 else (
-            "partial" if confidence >= 0.6 else "not_implemented"
+            "partially_implemented" if confidence >= 0.6 else "not_implemented"
         )
 
         return ICAMAssessmentResult(
@@ -194,8 +194,8 @@ class ICAMAgent:
             controls_evaluated=[a.control_id for a in assessments],
             findings={"results": results},
             status="completed",
-            created_at=datetime.utcnow(),
-            completed_at=datetime.utcnow()
+            created_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC)
         )
         db.add(record)
         await db.commit()
@@ -216,7 +216,7 @@ async def run_icam_assessment(db: AsyncSession = Depends(get_db)):
         "zt_pillar": "User",
         "assessments": results,
         "controls_evaluated": [r["control_id"] for r in results],
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
