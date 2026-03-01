@@ -57,6 +57,33 @@ def seed_registry():
             protocols=[Protocol.HTTPS, Protocol.MCP],
             capabilities=["Compliance Analysis", "Remediation Planning", "All ZT Pillars"],
             endpoint="/api/agents/mistral"
+        ),
+        AgentFacts(
+            agent_id="nist-01",
+            name="NIST Specialist Agent",
+            version="1.0.0",
+            trust_level=TrustLevel.VERIFIED,
+            protocols=[Protocol.HTTPS],
+            capabilities=["NIST 800-171 Assessment", "Security Controls Audit"],
+            endpoint="/api/agents/nist"
+        ),
+        AgentFacts(
+            agent_id="hipaa-01",
+            name="HIPAA Specialist Agent",
+            version="1.0.0",
+            trust_level=TrustLevel.VERIFIED,
+            protocols=[Protocol.HTTPS],
+            capabilities=["HIPAA Security Rule Assessment", "PHI Protection Audit"],
+            endpoint="/api/agents/hipaa"
+        ),
+        AgentFacts(
+            agent_id="fhir-01",
+            name="FHIR Specialist Agent",
+            version="1.0.0",
+            trust_level=TrustLevel.VERIFIED,
+            protocols=[Protocol.HTTPS],
+            capabilities=["FHIR Privacy & Security Assessment", "Interoperability Audit"],
+            endpoint="/api/agents/fhir"
         )
     ]
     for a in agents:

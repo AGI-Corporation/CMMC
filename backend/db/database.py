@@ -31,6 +31,7 @@ class Base(DeclarativeBase):
 class ControlRecord(Base):
     __tablename__ = "controls"
     id = Column(String, primary_key=True, index=True)  # e.g. AC.1.001
+    framework = Column(String, index=True, default="CMMC")
     domain = Column(String, index=True)
     level = Column(String)
     title = Column(String)
@@ -63,6 +64,7 @@ class EvidenceRecord(Base):
 class AssessmentRecord(Base):
     __tablename__ = "assessments"
     id = Column(String, primary_key=True, index=True)
+    framework = Column(String, index=True, default="CMMC")
     system_name = Column(String)
     control_id = Column(String, index=True)
     status = Column(String)  # implemented/partial/planned/not_implemented/na
@@ -79,6 +81,7 @@ class AssessmentRecord(Base):
 class AgentRunRecord(Base):
     __tablename__ = "agent_runs"
     id = Column(String, primary_key=True, index=True)
+    framework = Column(String, index=True, default="CMMC")
     agent_type = Column(String)  # orchestrator/icam/data/infra/devsecops/governance/ops
     trigger = Column(String)  # code_push/incident/schedule/manual
     scope = Column(String)
@@ -106,23 +109,30 @@ async def init_db():
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(ControlRecord))
         if not result.scalars().first():
-            schema_path = os.getenv("OSCAL_CATALOG_PATH", "./schema/cmmc_oscal_catalog.json")
-            if os.path.exists(schema_path):
-                with open(schema_path) as f:
-                    data = json.load(f)
-                    controls = data.get("controls", [])
-                    for c in controls:
-                        db_ctrl = ControlRecord(
-                            id=c["id"],
-                            domain=c["domain"],
-                            level=c["level"],
-                            title=c["title"],
-                            description=c["description"],
-                            nist_mapping=c.get("nist_mapping"),
-                            score_value=c.get("weight", 1)
-                        )
-                        session.add(db_ctrl)
-                await session.commit()
+            catalogs = [
+                ("./schema/cmmc_oscal_catalog.json", "CMMC"),
+                ("./schema/nist_catalog.json", "NIST"),
+                ("./schema/hipaa_catalog.json", "HIPAA"),
+                ("./schema/fhir_catalog.json", "FHIR"),
+            ]
+            for schema_path, framework in catalogs:
+                if os.path.exists(schema_path):
+                    with open(schema_path) as f:
+                        data = json.load(f)
+                        controls = data.get("controls", [])
+                        for c in controls:
+                            db_ctrl = ControlRecord(
+                                id=c["id"],
+                                framework=framework,
+                                domain=c["domain"],
+                                level=c["level"],
+                                title=c["title"],
+                                description=c["description"],
+                                nist_mapping=c.get("nist_mapping"),
+                                score_value=c.get("weight", 1)
+                            )
+                            session.add(db_ctrl)
+            await session.commit()
 
 
 async def get_latest_assessments(db: AsyncSession):

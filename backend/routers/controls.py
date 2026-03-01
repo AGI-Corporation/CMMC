@@ -22,17 +22,20 @@ router = APIRouter()
     description="List all CMMC controls, optionally filtered by level or domain. Returns controls with current implementation status."
 )
 async def list_controls(
-    level: Optional[CMMCLevel] = Query(None, description="Filter by CMMC level (Level 1, Level 2, Level 3)"),
-    domain: Optional[ControlDomain] = Query(None, description="Filter by control domain (AC, AU, CM, etc.)"),
+    framework: Optional[str] = Query("CMMC", description="Filter by framework (CMMC, NIST, HIPAA, FHIR)"),
+    level: Optional[CMMCLevel] = Query(None, description="Filter by level"),
+    domain: Optional[str] = Query(None, description="Filter by control domain"),
     status: Optional[ImplementationStatus] = Query(None, description="Filter by implementation status"),
     db: AsyncSession = Depends(get_db)
 ):
     # Base query for controls
     query = select(ControlRecord)
+    if framework:
+        query = query.where(ControlRecord.framework == framework)
     if level:
         query = query.where(ControlRecord.level == level.value)
     if domain:
-        query = query.where(ControlRecord.domain == domain.value)
+        query = query.where(ControlRecord.domain == domain)
 
     # Efficiently get latest assessments for all relevant controls
     sub_q = (
@@ -70,6 +73,7 @@ async def list_controls(
         responses.append(ControlResponse(
             control=Control(
                 id=c.id,
+                framework=c.framework,
                 title=c.title,
                 description=c.description,
                 domain=c.domain,
@@ -108,6 +112,7 @@ async def get_control_detail(control_id: str, db: AsyncSession = Depends(get_db)
     return ControlResponse(
         control=Control(
             id=c.id,
+            framework=c.framework,
             title=c.title,
             description=c.description,
             domain=c.domain,
@@ -158,6 +163,7 @@ async def update_control_status(control_id: str, update: ControlUpdate, db: Asyn
     return ControlResponse(
         control=Control(
             id=c.id,
+            framework=c.framework,
             title=c.title,
             description=c.description,
             domain=c.domain,

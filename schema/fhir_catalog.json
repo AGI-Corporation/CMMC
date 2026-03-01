@@ -1,0 +1,23 @@
+{
+  "framework": "FHIR",
+  "controls": [
+    {
+      "id": "FHIR-SEC-1",
+      "title": "FHIR Communications Security",
+      "description": "All FHIR communications should be encrypted using TLS/SSL.",
+      "domain": "Security",
+      "level": "Required",
+      "nist_mapping": "SC-8",
+      "weight": 5
+    },
+    {
+      "id": "FHIR-PRIV-1",
+      "title": "FHIR Patient Consent",
+      "description": "Ensure patient consent is recorded and respected before sharing FHIR resources.",
+      "domain": "Privacy",
+      "level": "Required",
+      "nist_mapping": "AC-1",
+      "weight": 5
+    }
+  ]
+}

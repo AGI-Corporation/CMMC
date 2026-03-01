@@ -17,7 +17,7 @@ interface ControlResponse {
   poam_required: boolean;
 }
 
-const ControlExplorer: React.FC = () => {
+const ControlExplorer: React.FC<{ framework?: string }> = ({ framework = 'CMMC' }) => {
   const [controls, setControls] = useState<ControlResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -27,7 +27,7 @@ const ControlExplorer: React.FC = () => {
     setLoading(true);
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     try {
-      const res = await fetch(`${baseUrl}/api/controls/`);
+      const res = await fetch(`${baseUrl}/api/controls/?framework=${framework}`);
       const data = await res.json();
       setControls(data.controls);
     } catch (error) {
@@ -39,7 +39,7 @@ const ControlExplorer: React.FC = () => {
 
   useEffect(() => {
     fetchControls();
-  }, []);
+  }, [framework]);
 
   const filtered = controls.filter(c =>
     (c.control.id.toLowerCase().includes(filter.toLowerCase()) ||
@@ -53,8 +53,8 @@ const ControlExplorer: React.FC = () => {
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 mt-12 overflow-hidden">
       <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
         <div>
-          <h3 className="text-lg font-bold text-gray-800">CMMC Control Explorer</h3>
-          <p className="text-xs text-gray-500 uppercase tracking-widest">Browse, filter, and audit all CMMC practices</p>
+          <h3 className="text-lg font-bold text-gray-800">{framework} Control Explorer</h3>
+          <p className="text-xs text-gray-500 uppercase tracking-widest">Browse, filter, and audit all {framework} practices</p>
         </div>
         <div className="flex gap-4">
             <select

@@ -2,7 +2,7 @@
 Assessment Router - SPRS score calculation and compliance dashboard.
 These endpoints become MCP tools: calculate_sprs_score, get_compliance_dashboard.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 import os
@@ -61,20 +61,26 @@ class SPRSResult(BaseModel):
     summary="Get Compliance Dashboard",
     description="Get overall CMMC compliance posture summary including implementation percentages, SPRS score, and breakdown by domain and level."
 )
-async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(ControlRecord))
+async def get_compliance_dashboard(
+    framework: str = Query("CMMC", description="Filter by framework (CMMC, NIST, HIPAA, FHIR)"),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(ControlRecord).where(ControlRecord.framework == framework))
     controls = result.scalars().all()
 
     assessments_map = await get_latest_assessments(db)
     
     by_domain = {}
-    by_level = {"Level 1": {"total": 0, "implemented": 0}, "Level 2": {"total": 0, "implemented": 0}, "Level 3": {"total": 0, "implemented": 0}}
+    by_level = {}
     implemented = not_implemented = partial = not_started = not_applicable = 0
     sprs_score = 110  # Start at max, deduct for non-implemented
 
     for c in controls:
         domain = c.domain
-        level = c.level
+        level = c.level or "Required"
+
+        if level not in by_level:
+            by_level[level] = {"total": 0, "implemented": 0}
         cid = c.id
 
         assessment = assessments_map.get(cid)
@@ -139,8 +145,11 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     summary="Calculate SPRS Score",
     description="Calculate the DoD Supplier Performance Risk System (SPRS) score based on current control implementation status. Score ranges from -203 to 110."
 )
-async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(ControlRecord))
+async def calculate_sprs_score(
+    framework: str = Query("CMMC", description="Filter by framework (CMMC, NIST, HIPAA, FHIR)"),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(ControlRecord).where(ControlRecord.framework == framework))
     controls = result.scalars().all()
 
     assessments_map = await get_latest_assessments(db)
@@ -201,6 +210,7 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
         for res in results:
             new_ass = AssessmentRecord(
                 id=str(uuid.uuid4()),
+                framework=run.framework,
                 control_id=res["control_id"],
                 status=res["status"],
                 confidence=res["confidence"],
@@ -223,6 +233,7 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
         for cid in controls:
             new_ass = AssessmentRecord(
                 id=str(uuid.uuid4()),
+                framework=run.framework,
                 control_id=cid,
                 status=status,
                 confidence=overall_conf,
@@ -242,6 +253,27 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
         for f in agent_findings:
             new_ass = AssessmentRecord(
                 id=str(uuid.uuid4()),
+                framework=run.framework,
+                control_id=f["control_id"],
+                status=f["status"],
+                confidence=f["confidence"],
+                notes=f"Promoted from {run.agent_type} agent run {run_id}. Finding: {f['finding']}",
+                evidence_ids=[findings.get("evidence_id")],
+                assessor=f"Agent: {run.agent_type}",
+                assessment_date=datetime.now(UTC),
+                poam_required="true" if f["status"] in ["partial", "not_implemented", "partially_implemented"] else "false",
+                fingerprint=run.fingerprint
+            )
+            db.add(new_ass)
+            promoted_count += 1
+
+    # Generic logic for specialist agents (nist, hipaa, fhir)
+    elif run.agent_type in ["nist", "hipaa", "fhir"]:
+        agent_findings = findings.get("findings", [])
+        for f in agent_findings:
+            new_ass = AssessmentRecord(
+                id=str(uuid.uuid4()),
+                framework=run.framework,
                 control_id=f["control_id"],
                 status=f["status"],
                 confidence=f["confidence"],
@@ -261,6 +293,7 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
         for f in agent_findings:
             new_ass = AssessmentRecord(
                 id=str(uuid.uuid4()),
+                framework=run.framework,
                 control_id=f["control_id"],
                 status=f["status"],
                 confidence=f["confidence"],

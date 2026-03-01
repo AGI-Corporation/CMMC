@@ -34,14 +34,15 @@ const Dashboard: React.FC = () => {
   const [recentRuns, setRecentRuns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRunningAssessment, setIsRunningAssessment] = useState(false);
+  const [framework, setFramework] = useState('CMMC');
 
   const fetchData = async () => {
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     try {
       const [sumRes, ztRes, reportRes] = await Promise.all([
-        fetch(`${baseUrl}/api/assessment/dashboard`),
-        fetch(`${baseUrl}/api/orchestrator/scorecard`),
-        fetch(`${baseUrl}/api/orchestrator/report`)
+        fetch(`${baseUrl}/api/assessment/dashboard?framework=${framework}`),
+        fetch(`${baseUrl}/api/orchestrator/scorecard?framework=${framework}`),
+        fetch(`${baseUrl}/api/orchestrator/report?framework=${framework}`)
       ]);
       const sumData = await sumRes.json();
       const ztData = await ztRes.json();
@@ -60,7 +61,7 @@ const Dashboard: React.FC = () => {
     setIsRunningAssessment(true);
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     try {
-      const res = await fetch(`${baseUrl}/api/orchestrator/run`, {
+      const res = await fetch(`${baseUrl}/api/orchestrator/run?framework=${framework}`, {
         method: 'POST',
       });
       if (res.ok) {
@@ -75,7 +76,7 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [framework]);
 
   if (loading) return <div className="p-8 text-center">Loading Compliance Dashboard...</div>;
 
@@ -83,8 +84,23 @@ const Dashboard: React.FC = () => {
     <div className="p-8 bg-gray-50 min-h-screen">
       <header className="mb-8 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">CMMC Compliance Dashboard</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{framework} Compliance Dashboard</h1>
           <p className="text-gray-600">AI-Powered Compliance Automation with NANDA & OML</p>
+        </div>
+        <div className="flex gap-4 items-center">
+            <div className="flex flex-col">
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Framework</label>
+                <select
+                    value={framework}
+                    onChange={(e) => setFramework(e.target.value)}
+                    className="bg-white border border-gray-300 rounded-lg px-3 py-2 font-bold text-gray-700 shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                    <option value="CMMC">CMMC 2.0</option>
+                    <option value="NIST">NIST 800-171</option>
+                    <option value="HIPAA">HIPAA Security</option>
+                    <option value="FHIR">FHIR Privacy</option>
+                </select>
+            </div>
         </div>
         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 text-center">
           <span className="text-sm font-medium text-gray-500 uppercase tracking-wider">SPRS Score</span>
@@ -204,7 +220,7 @@ const Dashboard: React.FC = () => {
         </button>
       </div>
 
-      <ControlExplorer />
+      <ControlExplorer framework={framework} />
     </div>
   );
 };

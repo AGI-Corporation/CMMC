@@ -21,6 +21,9 @@ from agents.devsecops_agent import agent as devsecops
 from agents.mistral_agent import agent as mistral
 from agents.infra_agent import agent as infra
 from agents.data_agent import agent as data
+from agents.nist_agent import agent as nist
+from agents.hipaa_agent import agent as hipaa
+from agents.fhir_agent import agent as fhir
 
 from backend.db.database import init_db
 from dotenv import load_dotenv
@@ -78,6 +81,9 @@ app.include_router(devsecops.router, prefix="/api/agents/devsecops", tags=["DevS
 app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
 app.include_router(infra.router, prefix="/api/agents/infra", tags=["Infrastructure Agent"])
 app.include_router(data.router, prefix="/api/agents/data", tags=["Data Agent"])
+app.include_router(nist.router, prefix="/api/agents/nist", tags=["NIST Agent"])
+app.include_router(hipaa.router, prefix="/api/agents/hipaa", tags=["HIPAA Agent"])
+app.include_router(fhir.router, prefix="/api/agents/fhir", tags=["FHIR Agent"])
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
