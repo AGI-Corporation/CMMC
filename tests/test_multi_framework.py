@@ -27,7 +27,7 @@ async def test_multi_framework_seeding():
         # Test FHIR
         response = await ac.get("/api/controls/?framework=FHIR")
         assert response.status_code == 200
-        assert response.json()["total"] == 2
+        assert response.json()["total"] == 5
 
 @pytest.mark.asyncio
 async def test_multi_framework_orchestrator_run():

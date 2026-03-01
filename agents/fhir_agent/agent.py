@@ -13,16 +13,20 @@ class FHIRAgent:
         findings = {
             "findings": [
                 {"control_id": "FHIR-SEC-1", "status": "implemented", "confidence": 1.0, "finding": "TLS 1.3 enforced on all FHIR endpoints."},
-                {"control_id": "FHIR-PRIV-1", "status": "not_implemented", "confidence": 0.5, "finding": "Consent resource implementation pending."}
-            ]
+                {"control_id": "FHIR-PRIV-1", "status": "not_implemented", "confidence": 0.5, "finding": "Consent resource implementation pending."},
+                {"control_id": "FHIR-SMART-1", "status": "implemented", "confidence": 0.95, "finding": "SMART App Launch 2.2.0 proxy-smart integration verified."},
+                {"control_id": "FHIR-OAUTH-1", "status": "implemented", "confidence": 1.0, "finding": "Keycloak-backed OAuth 2.0 with PKCE active."},
+                {"control_id": "FHIR-TYPE-1", "status": "partially_implemented", "confidence": 0.8, "finding": "BabelFHIR-TS interfaces integrated; runtime validation enabled for Patient and Observation resources."}
+            ],
+            "evidence_id": "EV-FHIR-" + str(uuid.uuid4())[:8]
         }
         record = AgentRunRecord(
             id=str(uuid.uuid4()),
             framework="FHIR",
             agent_type="fhir",
             trigger=trigger,
-            scope="FHIR Privacy & Security Assessment",
-            controls_evaluated=["FHIR-SEC-1", "FHIR-PRIV-1"],
+            scope="FHIR Privacy, Security & Interoperability Assessment",
+            controls_evaluated=["FHIR-SEC-1", "FHIR-PRIV-1", "FHIR-SMART-1", "FHIR-OAUTH-1", "FHIR-TYPE-1"],
             findings=findings,
             status="completed",
             created_at=datetime.now(UTC),

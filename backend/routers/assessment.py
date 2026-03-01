@@ -115,14 +115,22 @@ async def get_compliance_dashboard(
     total = len(controls)
     pct = (implemented / total * 100) if total > 0 else 0
     
-    if pct >= 100:
-        readiness = "Ready for Certification"
-    elif pct >= 80:
-        readiness = "Near Compliant - Minor Gaps"
-    elif pct >= 60:
-        readiness = "In Progress - Significant Gaps"
+    if framework == "HIPAA":
+        if pct >= 100: readiness = "Fully HIPAA Compliant"
+        elif pct >= 75: readiness = "Substantial Compliance - Addressable Gaps"
+        else: readiness = "High Risk - Mandatory Safeguards Missing"
+    elif framework == "FHIR":
+        if pct >= 100: readiness = "Fully Interoperable & Secure"
+        else: readiness = "Integration in Progress"
     else:
-        readiness = "Early Stage - Major Remediation Needed"
+        if pct >= 100:
+            readiness = "Ready for Certification"
+        elif pct >= 80:
+            readiness = "Near Compliant - Minor Gaps"
+        elif pct >= 60:
+            readiness = "In Progress - Significant Gaps"
+        else:
+            readiness = "Early Stage - Major Remediation Needed"
 
     return DashboardSummary(
         total_controls=total,
