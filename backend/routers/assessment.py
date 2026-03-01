@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import Dict, List, Optional
 import os
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from backend.db.database import get_db, ControlRecord, AssessmentRecord
 
@@ -53,6 +53,25 @@ class SPRSResult(BaseModel):
     certification_level: str
     assessment_date: str
 
+async def get_latest_assessments(db: AsyncSession):
+    sub_q = (
+        select(
+            AssessmentRecord.control_id,
+            func.max(AssessmentRecord.assessment_date).label("max_date")
+        )
+        .group_by(AssessmentRecord.control_id)
+        .subquery()
+    )
+    query = (
+        select(AssessmentRecord)
+        .join(
+            sub_q,
+            (AssessmentRecord.control_id == sub_q.c.control_id) &
+            (AssessmentRecord.assessment_date == sub_q.c.max_date)
+        )
+    )
+    result = await db.execute(query)
+    return {a.control_id: a for a in result.scalars().all()}
 
 @router.get(
     "/dashboard",
@@ -63,6 +82,8 @@ class SPRSResult(BaseModel):
 async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ControlRecord))
     controls = result.scalars().all()
+
+    assessments_map = await get_latest_assessments(db)
     
     by_domain = {}
     by_level = {"Level 1": {"total": 0, "implemented": 0}, "Level 2": {"total": 0, "implemented": 0}, "Level 3": {"total": 0, "implemented": 0}}
@@ -74,10 +95,7 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
         level = c.level
         cid = c.id
 
-        # Get latest assessment
-        a_query = select(AssessmentRecord).where(AssessmentRecord.control_id == cid).order_by(AssessmentRecord.assessment_date.desc())
-        a_result = await db.execute(a_query)
-        assessment = a_result.scalars().first()
+        assessment = assessments_map.get(cid)
         status = assessment.status if assessment else "not_started"
 
         if domain not in by_domain:
@@ -96,7 +114,7 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
             by_domain[domain]["not_implemented"] += 1
             deduction = SPRS_DEDUCTIONS.get(cid, 1)
             sprs_score -= deduction
-        elif status == "partially_implemented":
+        elif status == "partially_implemented" or status == "partial":
             partial += 1
         elif status == "not_applicable":
             not_applicable += 1
@@ -140,21 +158,21 @@ async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
     import datetime
     result = await db.execute(select(ControlRecord))
     controls = result.scalars().all()
+
+    assessments_map = await get_latest_assessments(db)
+
     sprs = 110
     deductions_list = []
     implemented_count = not_implemented_count = 0
 
     for c in controls:
         cid = c.id
-        # Get latest assessment
-        a_query = select(AssessmentRecord).where(AssessmentRecord.control_id == cid).order_by(AssessmentRecord.assessment_date.desc())
-        a_result = await db.execute(a_query)
-        assessment = a_result.scalars().first()
+        assessment = assessments_map.get(cid)
         status = assessment.status if assessment else "not_started"
 
         if status == "implemented":
             implemented_count += 1
-        elif status in ["not_implemented", "not_started", "partially_implemented"]:
+        elif status in ["not_implemented", "not_started", "partially_implemented", "partial"]:
             not_implemented_count += 1
             deduction = SPRS_DEDUCTIONS.get(cid, 1)
             sprs -= deduction

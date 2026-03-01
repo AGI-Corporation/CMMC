@@ -15,6 +15,11 @@ import json
 import os
 
 from backend.routers import controls, assessment, evidence, reports
+from agents.orchestrator import agent as orchestrator
+from agents.icam_agent import agent as icam
+from agents.devsecops_agent import agent as devsecops
+from agents.mistral_agent import agent as mistral
+
 from backend.db.database import init_db
 from dotenv import load_dotenv
 
@@ -55,10 +60,17 @@ app.add_middleware(
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
+# Core Routers
 app.include_router(controls.router, prefix="/api/controls", tags=["Controls"])
 app.include_router(assessment.router, prefix="/api/assessment", tags=["Assessment"])
 app.include_router(evidence.router, prefix="/api/evidence", tags=["Evidence"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
+
+# Agent Routers
+app.include_router(orchestrator.router, prefix="/api/orchestrator", tags=["Orchestrator"])
+app.include_router(icam.router, prefix="/api/agents/icam", tags=["ICAM Agent"])
+app.include_router(devsecops.router, prefix="/api/agents/devsecops", tags=["DevSecOps Agent"])
+app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────

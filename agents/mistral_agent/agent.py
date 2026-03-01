@@ -5,12 +5,6 @@ AGI Corporation 2026
 This agent uses Mistral AI models (mistral-large, mistral-medium, codestral)
 to analyze compliance gaps, generate remediation guidance, assess control
 implementation evidence, and produce POAM recommendations.
-
-Mistral is the preferred AI backbone because:
-- Mistral Large 2 is competitive with GPT-4 for structured reasoning
-- Codestral for DevSecOps pipeline/code analysis
-- Mistral 7B (local via Ollama) for air-gapped / classified environments
-- Function calling support for MCP tool integration
 """
 import os
 import json
@@ -19,7 +13,8 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from mistralai import Mistral
 from pydantic import BaseModel
-
+from sqlalchemy.ext.asyncio import AsyncSession
+from backend.db.database import AgentRunRecord, get_db
 
 # ─── Mistral Configuration ─────────────────────────────────────────────────────
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
@@ -32,53 +27,80 @@ USE_LOCAL = os.getenv("USE_LOCAL_MODEL", "false").lower() == "true"
 class MistralComplianceAgent:
     """
     Mistral-powered compliance agent.
-    
-    Responsibilities:
-    - Gap analysis: identify unimplemented controls vs ZT pillars
-    - Evidence evaluation: score evidence quality (0-1 confidence)
-    - Remediation guidance: step-by-step fix recommendations
-    - POAM generation: structured plan of action & milestones
-    - Code review: DevSecOps pipeline security analysis (Codestral)
-    - Natural language Q&A: answer CMMC/ZT questions for assessors
     """
 
     def __init__(self):
         if USE_LOCAL:
             # Use Ollama local endpoint for air-gapped environments
-            from openai import OpenAI
-            self.client = OpenAI(
+            from openai import AsyncOpenAI
+            self.client = AsyncOpenAI(
                 base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
                 api_key="ollama",
             )
             self.model = MISTRAL_LOCAL_MODEL
             self.use_mistral_client = False
         else:
-            self.client = Mistral(api_key=MISTRAL_API_KEY)
+            if not MISTRAL_API_KEY:
+                self.client = None
+                print("Warning: MISTRAL_API_KEY not set. Mistral agent will operate in mock mode.")
+            else:
+                self.client = Mistral(api_key=MISTRAL_API_KEY)
             self.model = MISTRAL_MODEL
             self.code_model = MISTRAL_CODE_MODEL
             self.use_mistral_client = True
 
-    def _chat(self, system: str, user: str, model: Optional[str] = None) -> str:
+    async def _chat(self, system: str, user: str, model: Optional[str] = None) -> str:
         """Send a chat completion request to Mistral."""
+        if not self.client:
+            # Return mock JSON response if no client
+            return json.dumps({
+                "gap_summary": "Mock analysis: Mistral API key missing.",
+                "severity": "medium",
+                "zt_impact": "Simulated impact on ZT pillar.",
+                "confidence_score": 0.5,
+                "remediation_steps": ["Configure MISTRAL_API_KEY"],
+                "estimated_effort_days": 1,
+                "poam_entry": {"milestone": "Setup API", "completion_date": "TBD", "responsible_party": "Admin", "resources": "API Key"},
+                "overall_risk": "medium",
+                "security_issues": []
+            })
+
         m = model or self.model
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ]
         if self.use_mistral_client:
-            response = self.client.chat.complete(
+            response = await self.client.chat.complete_async(
                 model=m,
                 messages=messages,
                 response_format={"type": "json_object"},
             )
             return response.choices[0].message.content
         else:
-            response = self.client.chat.completions.create(
-                model=m, messages=messages
+            response = await self.client.chat.completions.create(
+                model=m, messages=messages, response_format={"type": "json_object"}
             )
             return response.choices[0].message.content
 
-    def analyze_gap(
+    async def record_run(self, db: AsyncSession, trigger: str, scope: str, controls: List[str], findings: Dict[str, Any], status: str = "completed"):
+        record = AgentRunRecord(
+            id=str(uuid.uuid4()),
+            agent_type="mistral",
+            trigger=trigger,
+            scope=scope,
+            controls_evaluated=controls,
+            findings=findings,
+            status=status,
+            mistral_model=self.model,
+            created_at=datetime.utcnow(),
+            completed_at=datetime.utcnow()
+        )
+        db.add(record)
+        await db.commit()
+        return record.id
+
+    async def analyze_gap(
         self,
         control_id: str,
         control_title: str,
@@ -87,10 +109,6 @@ class MistralComplianceAgent:
         current_status: str,
         existing_evidence: List[str],
     ) -> Dict[str, Any]:
-        """
-        Analyze a single CMMC control for compliance gaps.
-        Returns structured gap analysis with confidence score.
-        """
         system = """You are a CMMC Level 2 compliance expert and DoD Zero Trust advisor.
         Analyze the provided control and return a JSON object with these fields:
         - gap_summary: string describing the compliance gap
@@ -109,13 +127,13 @@ class MistralComplianceAgent:
         
         Analyze this control for compliance gaps and provide remediation guidance."""
 
-        result = self._chat(system, user)
+        result = await self._chat(system, user)
         try:
             return json.loads(result)
         except json.JSONDecodeError:
             return {"raw_response": result, "error": "parse_failed"}
 
-    def evaluate_evidence(
+    async def evaluate_evidence(
         self,
         control_id: str,
         evidence_descriptions: List[str],
@@ -135,22 +153,18 @@ class MistralComplianceAgent:
         Evidence provided: {json.dumps(evidence_descriptions)}
         Rate the completeness and quality of this evidence."""
 
-        result = self._chat(system, user)
+        result = await self._chat(system, user)
         try:
             return json.loads(result)
         except json.JSONDecodeError:
             return {"confidence_score": 0.5, "coverage_rating": "partial"}
 
-    def analyze_code_security(
+    async def analyze_code_security(
         self,
         code_snippet: str,
         language: str = "python",
         relevant_controls: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """
-        DevSecOps: Analyze code for security issues mapped to CMMC controls.
-        Uses Codestral model for code-specific analysis.
-        """
         system = """You are a DevSecOps security expert analyzing code for CMMC compliance.
         Return a JSON object with:
         - security_issues: list of {severity, line, description, cmmc_control, fix}
@@ -168,24 +182,28 @@ class MistralComplianceAgent:
         ```
         """
         model = self.code_model if self.use_mistral_client else self.model
-        result = self._chat(system, user, model=model)
+        result = await self._chat(system, user, model=model)
         try:
             return json.loads(result)
         except json.JSONDecodeError:
             return {"overall_risk": "unknown", "raw": result}
 
-    def generate_sprs_narrative(
+    async def generate_sprs_narrative(
         self, score: int, domain_breakdown: Dict[str, Any]
     ) -> str:
         """Generate a human-readable SPRS score narrative for assessors."""
+        if not self.client:
+            return "Mock narrative: Mistral API key missing. SPRS score reflects current assessment state."
+
         system = """You are a DoD cybersecurity assessor. Generate a concise narrative
         (3-4 paragraphs) explaining the SPRS score, domain gaps, and priority actions.
         The narrative will be included in a System Security Plan."""
         user = f"""SPRS Score: {score} (range: -203 to 110)
         Domain Breakdown: {json.dumps(domain_breakdown, indent=2)}
         Generate the SSP narrative section."""
+
         if self.use_mistral_client:
-            response = self.client.chat.complete(
+            response = await self.client.chat.complete_async(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system},
@@ -194,7 +212,7 @@ class MistralComplianceAgent:
             )
             return response.choices[0].message.content
         else:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system},
@@ -203,14 +221,16 @@ class MistralComplianceAgent:
             )
             return response.choices[0].message.content
 
-    def answer_compliance_question(self, question: str, context: str = "") -> str:
-        """Answer a natural language CMMC/ZT compliance question."""
+    async def answer_compliance_question(self, question: str, context: str = "") -> str:
+        if not self.client:
+            return "Mock answer: Mistral API key missing. Please configure it to get real compliance advice."
+
         system = """You are a CMMC 2.0 and DoD Zero Trust compliance expert.
         Answer the question clearly, citing specific CMMC practices and ZT capabilities.
         Be concise and practical."""
         user = f"{context}\n\nQuestion: {question}" if context else question
         if self.use_mistral_client:
-            response = self.client.chat.complete(
+            response = await self.client.chat.complete_async(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system},
@@ -219,7 +239,7 @@ class MistralComplianceAgent:
             )
             return response.choices[0].message.content
         else:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system},
@@ -230,7 +250,7 @@ class MistralComplianceAgent:
 
 
 # ─── FastAPI router for Mistral agent endpoints ────────────────────────────────
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 router = APIRouter()
 agent = MistralComplianceAgent()
@@ -257,25 +277,27 @@ class QuestionRequest(BaseModel):
 
 
 @router.post("/gap-analysis", summary="Analyze CMMC control gap with Mistral AI")
-async def gap_analysis(req: GapAnalysisRequest):
+async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_db)):
     """Use Mistral to analyze a compliance gap and return remediation steps."""
     try:
-        result = agent.analyze_gap(
+        result = await agent.analyze_gap(
             req.control_id, req.control_title, req.control_description,
             req.zt_pillar, req.current_status, req.existing_evidence
         )
+        await agent.record_run(db, "manual", f"Gap Analysis: {req.control_id}", [req.control_id], result)
         return {"control_id": req.control_id, "analysis": result, "model": MISTRAL_MODEL}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/code-review", summary="DevSecOps code security analysis with Codestral")
-async def code_review(req: CodeReviewRequest):
+async def code_review(req: CodeReviewRequest, db: AsyncSession = Depends(get_db)):
     """Use Codestral to analyze code for CMMC-mapped security issues."""
     try:
-        result = agent.analyze_code_security(
+        result = await agent.analyze_code_security(
             req.code_snippet, req.language, req.relevant_controls
         )
+        await agent.record_run(db, "manual", "Code Review", req.relevant_controls or [], result)
         return {"analysis": result, "model": MISTRAL_CODE_MODEL}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -285,7 +307,7 @@ async def code_review(req: CodeReviewRequest):
 async def ask_question(req: QuestionRequest):
     """Natural language CMMC compliance Q&A powered by Mistral."""
     try:
-        answer = agent.answer_compliance_question(req.question, req.context)
+        answer = await agent.answer_compliance_question(req.question, req.context)
         return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

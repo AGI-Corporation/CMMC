@@ -5,7 +5,7 @@ These endpoints are automatically exposed as MCP tools via fastapi-mcp.
 from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from backend.db.database import get_db, ControlRecord, AssessmentRecord
 from backend.models.control import (
@@ -27,22 +27,44 @@ async def list_controls(
     status: Optional[ImplementationStatus] = Query(None, description="Filter by implementation status"),
     db: AsyncSession = Depends(get_db)
 ):
+    # Base query for controls
     query = select(ControlRecord)
     if level:
         query = query.where(ControlRecord.level == level.value)
     if domain:
         query = query.where(ControlRecord.domain == domain.value)
 
-    result = await db.execute(query)
-    controls_data = result.scalars().all()
+    # Efficiently get latest assessments for all relevant controls
+    # 1. Subquery for latest assessment date per control_id
+    sub_q = (
+        select(
+            AssessmentRecord.control_id,
+            func.max(AssessmentRecord.assessment_date).label("max_date")
+        )
+        .group_by(AssessmentRecord.control_id)
+        .subquery()
+    )
+
+    # 2. Query for full assessment records
+    assessments_q = (
+        select(AssessmentRecord)
+        .join(
+            sub_q,
+            (AssessmentRecord.control_id == sub_q.c.control_id) &
+            (AssessmentRecord.assessment_date == sub_q.c.max_date)
+        )
+    )
+
+    # Execute both
+    ctrl_result = await db.execute(query)
+    controls_data = ctrl_result.scalars().all()
+
+    ass_result = await db.execute(assessments_q)
+    assessments_map = {a.control_id: a for a in ass_result.scalars().all()}
 
     responses = []
     for c in controls_data:
-        # Get latest assessment for this control
-        a_query = select(AssessmentRecord).where(AssessmentRecord.control_id == c.id).order_by(AssessmentRecord.assessment_date.desc())
-        a_result = await db.execute(a_query)
-        assessment = a_result.scalars().first()
-
+        assessment = assessments_map.get(c.id)
         impl_status = assessment.status if assessment else "not_started"
 
         if status and impl_status != status.value:

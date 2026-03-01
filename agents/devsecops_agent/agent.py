@@ -10,7 +10,9 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from backend.db.database import get_db, AgentRunRecord
 
 
 class SeverityLevel(str, Enum):
@@ -100,7 +102,7 @@ class DevSecOpsAgent:
             "evaluated_at": datetime.utcnow().isoformat(),
         }
 
-    def run_full_assessment(self, service_name: str = "cmmc-api") -> Dict[str, Any]:
+    async def run_full_assessment(self, db: AsyncSession, service_name: str = "cmmc-api", trigger: str = "manual") -> Dict[str, Any]:
         """Run complete DevSecOps assessment pipeline."""
         image_scan = self.scan_container_image(service_name)
         sbom = self.generate_sbom(service_name)
@@ -110,7 +112,7 @@ class DevSecOpsAgent:
             + pipeline["confidence_score"] * 0.4
             + (1.0 if sbom["high_risk_components"] == 0 else 0.7) * 0.2
         )
-        return {
+        result = {
             "agent": "devsecops",
             "service": service_name,
             "zt_pillar": "Application",
@@ -121,15 +123,32 @@ class DevSecOpsAgent:
             "timestamp": datetime.utcnow().isoformat(),
         }
 
+        # Persist result
+        record = AgentRunRecord(
+            id=str(uuid.uuid4()),
+            agent_type="devsecops",
+            trigger=trigger,
+            scope=service_name,
+            controls_evaluated=list(set(image_scan["cmmc_controls"] + sbom["cmmc_controls"] + pipeline["cmmc_controls"])),
+            findings=result,
+            status="completed",
+            created_at=datetime.utcnow(),
+            completed_at=datetime.utcnow()
+        )
+        db.add(record)
+        await db.commit()
+
+        return result
+
 
 router = APIRouter()
 _dso = DevSecOpsAgent()
 
 
 @router.get("/assess/{service_name}", summary="Run full DevSecOps ZT Application assessment")
-async def assess_service(service_name: str):
+async def assess_service(service_name: str, db: AsyncSession = Depends(get_db)):
     """Container scan + SBOM + pipeline gates - ZT Application Pillar evidence."""
-    return _dso.run_full_assessment(service_name)
+    return await _dso.run_full_assessment(db, service_name)
 
 
 @router.post("/scan-image", summary="Scan container image for CVEs")
