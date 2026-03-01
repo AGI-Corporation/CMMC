@@ -2,31 +2,18 @@
 CMMC Controls Router - FastAPI endpoints for control management.
 These endpoints are automatically exposed as MCP tools via fastapi-mcp.
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, List
-import json
-import os
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
+from backend.db.database import get_db, ControlRecord, AssessmentRecord
 from backend.models.control import (
     Control, ControlResponse, ControlListResponse,
     ControlUpdate, CMMCLevel, ControlDomain, ImplementationStatus
 )
 
 router = APIRouter()
-
-# In-memory store for assessment status (replace with DB in production)
-_assessment_store: dict = {}
-
-
-def load_controls() -> List[dict]:
-    """Load CMMC controls from OSCAL JSON schema."""
-    schema_path = os.getenv("OSCAL_CATALOG_PATH", "./schema/cmmc_oscal_catalog.json")
-    if os.path.exists(schema_path):
-        with open(schema_path) as f:
-            data = json.load(f)
-            return data.get("controls", [])
-    return []
-
 
 @router.get(
     "/",
@@ -37,24 +24,45 @@ def load_controls() -> List[dict]:
 async def list_controls(
     level: Optional[CMMCLevel] = Query(None, description="Filter by CMMC level (Level 1, Level 2, Level 3)"),
     domain: Optional[ControlDomain] = Query(None, description="Filter by control domain (AC, AU, CM, etc.)"),
-    status: Optional[ImplementationStatus] = Query(None, description="Filter by implementation status")
+    status: Optional[ImplementationStatus] = Query(None, description="Filter by implementation status"),
+    db: AsyncSession = Depends(get_db)
 ):
-    controls_data = load_controls()
+    query = select(ControlRecord)
+    if level:
+        query = query.where(ControlRecord.level == level.value)
+    if domain:
+        query = query.where(ControlRecord.domain == domain.value)
+
+    result = await db.execute(query)
+    controls_data = result.scalars().all()
+
     responses = []
     for c in controls_data:
-        if level and c.get("level") != level.value:
-            continue
-        if domain and c.get("domain") != domain.value:
-            continue
-        impl_status = _assessment_store.get(c["id"], {}).get("status")
+        # Get latest assessment for this control
+        a_query = select(AssessmentRecord).where(AssessmentRecord.control_id == c.id).order_by(AssessmentRecord.assessment_date.desc())
+        a_result = await db.execute(a_query)
+        assessment = a_result.scalars().first()
+
+        impl_status = assessment.status if assessment else "not_started"
+
         if status and impl_status != status.value:
             continue
+
         responses.append(ControlResponse(
-            control=Control(**c),
+            control=Control(
+                id=c.id,
+                title=c.title,
+                description=c.description,
+                domain=c.domain,
+                level=c.level,
+                nist_mapping=c.nist_mapping,
+                weight=c.score_value
+            ),
             implementation_status=impl_status,
-            evidence_count=_assessment_store.get(c["id"], {}).get("evidence_count", 0),
-            notes=_assessment_store.get(c["id"], {}).get("notes")
+            evidence_count=len(assessment.evidence_ids) if assessment and assessment.evidence_ids else 0,
+            notes=assessment.notes if assessment else None
         ))
+
     return ControlListResponse(controls=responses, total=len(responses), level_filter=level, domain_filter=domain)
 
 
@@ -64,17 +72,32 @@ async def list_controls(
     summary="Get Control Detail",
     description="Get full details of a specific CMMC control by its ID (e.g., AC.1.001)."
 )
-async def get_control_detail(control_id: str):
-    controls_data = load_controls()
-    for c in controls_data:
-        if c["id"] == control_id:
-            return ControlResponse(
-                control=Control(**c),
-                implementation_status=_assessment_store.get(control_id, {}).get("status"),
-                evidence_count=_assessment_store.get(control_id, {}).get("evidence_count", 0),
-                notes=_assessment_store.get(control_id, {}).get("notes")
-            )
-    raise HTTPException(status_code=404, detail=f"Control {control_id} not found")
+async def get_control_detail(control_id: str, db: AsyncSession = Depends(get_db)):
+    query = select(ControlRecord).where(ControlRecord.id == control_id)
+    result = await db.execute(query)
+    c = result.scalar_one_or_none()
+
+    if not c:
+        raise HTTPException(status_code=404, detail=f"Control {control_id} not found")
+
+    a_query = select(AssessmentRecord).where(AssessmentRecord.control_id == control_id).order_by(AssessmentRecord.assessment_date.desc())
+    a_result = await db.execute(a_query)
+    assessment = a_result.scalars().first()
+
+    return ControlResponse(
+        control=Control(
+            id=c.id,
+            title=c.title,
+            description=c.description,
+            domain=c.domain,
+            level=c.level,
+            nist_mapping=c.nist_mapping,
+            weight=c.score_value
+        ),
+        implementation_status=assessment.status if assessment else "not_started",
+        evidence_count=len(assessment.evidence_ids) if assessment and assessment.evidence_ids else 0,
+        notes=assessment.notes if assessment else None
+    )
 
 
 @router.patch(
@@ -83,20 +106,39 @@ async def get_control_detail(control_id: str):
     summary="Update Control Assessment Status",
     description="Update the implementation status, notes, and responsible party for a CMMC control."
 )
-async def update_control_status(control_id: str, update: ControlUpdate):
-    controls_data = load_controls()
-    control = next((c for c in controls_data if c["id"] == control_id), None)
-    if not control:
+async def update_control_status(control_id: str, update: ControlUpdate, db: AsyncSession = Depends(get_db)):
+    query = select(ControlRecord).where(ControlRecord.id == control_id)
+    result = await db.execute(query)
+    c = result.scalar_one_or_none()
+
+    if not c:
         raise HTTPException(status_code=404, detail=f"Control {control_id} not found")
-    _assessment_store[control_id] = {
-        "status": update.implementation_status.value,
-        "notes": update.notes,
-        "responsible_party": update.responsible_party,
-        "target_completion_date": str(update.target_completion_date) if update.target_completion_date else None,
-        "evidence_count": _assessment_store.get(control_id, {}).get("evidence_count", 0)
-    }
+
+    import uuid
+    from datetime import datetime
+
+    new_assessment = AssessmentRecord(
+        id=str(uuid.uuid4()),
+        control_id=control_id,
+        status=update.implementation_status.value,
+        notes=update.notes,
+        assessor=update.responsible_party,
+        next_review=update.target_completion_date,
+        assessment_date=datetime.utcnow()
+    )
+    db.add(new_assessment)
+    await db.commit()
+
     return ControlResponse(
-        control=Control(**control),
+        control=Control(
+            id=c.id,
+            title=c.title,
+            description=c.description,
+            domain=c.domain,
+            level=c.level,
+            nist_mapping=c.nist_mapping,
+            weight=c.score_value
+        ),
         implementation_status=update.implementation_status,
         notes=update.notes
     )
@@ -108,5 +150,5 @@ async def update_control_status(control_id: str, update: ControlUpdate):
     summary="Get Controls by Domain",
     description="Get all CMMC controls for a specific domain (e.g., AC for Access Control)."
 )
-async def get_controls_by_domain(domain: ControlDomain):
-    return await list_controls(domain=domain)
+async def get_controls_by_domain(domain: ControlDomain, db: AsyncSession = Depends(get_db)):
+    return await list_controls(domain=domain, db=db)

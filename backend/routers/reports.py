@@ -8,7 +8,7 @@ from the current assessment state. Output formats: Markdown, JSON, CSV.
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from typing import List, Dict, Any
 from datetime import datetime, date
 import csv
@@ -19,6 +19,29 @@ from backend.db.database import get_db, AssessmentRecord, ControlRecord, Evidenc
 
 router = APIRouter()
 
+async def get_latest_assessments(db: AsyncSession):
+    # Subquery for latest assessment date per control_id
+    subquery = (
+        select(
+            AssessmentRecord.control_id,
+            func.max(AssessmentRecord.assessment_date).label("max_date")
+        )
+        .group_by(AssessmentRecord.control_id)
+        .subquery()
+    )
+
+    # Join with the original table to get full records
+    query = (
+        select(AssessmentRecord)
+        .join(
+            subquery,
+            (AssessmentRecord.control_id == subquery.c.control_id) &
+            (AssessmentRecord.assessment_date == subquery.c.max_date)
+        )
+    )
+
+    result = await db.execute(query)
+    return result.scalars().all()
 
 @router.get("/ssp", summary="Generate System Security Plan (SSP) in Markdown")
 async def generate_ssp(
@@ -30,16 +53,18 @@ async def generate_ssp(
     Generate a NIST SP 800-171 / CMMC 2.0 SSP in Markdown format.
     Includes: system overview, control family summaries, implementation status.
     """
-    # Fetch all assessments
-    assessments_result = await db.execute(select(AssessmentRecord))
-    assessments = assessments_result.scalars().all()
+    # Fetch latest assessments
+    assessments = await get_latest_assessments(db)
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
     # Count by status
     status_counts = {"implemented": 0, "partial": 0, "planned": 0, "not_implemented": 0, "na": 0}
     for a in assessments:
-        status_counts[a.status] = status_counts.get(a.status, 0) + 1
+        if a.status in status_counts:
+            status_counts[a.status] += 1
+        elif a.status == "partially_implemented":
+             status_counts["partial"] += 1
 
     sprs_estimate = 110 - (status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5)
     sprs_estimate = max(-203, round(sprs_estimate, 0))
@@ -121,8 +146,7 @@ async def generate_poam(
     Generate a Plan of Action & Milestones (POA&M) as CSV.
     Includes all partial and not_implemented controls.
     """
-    assessments_result = await db.execute(select(AssessmentRecord))
-    assessments = assessments_result.scalars().all()
+    assessments = await get_latest_assessments(db)
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
@@ -135,7 +159,7 @@ async def generate_poam(
     ])
 
     for a in assessments:
-        if a.status in ["not_implemented", "partial", "planned"]:
+        if a.status in ["not_implemented", "partial", "planned", "partially_implemented"]:
             ctrl = controls.get(a.control_id)
             domain = a.control_id.split(".")[0] if "." in a.control_id else ""
             writer.writerow([
@@ -165,26 +189,32 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Return compliance posture summary for dashboard rendering."""
-    assessments_result = await db.execute(select(AssessmentRecord))
-    assessments = assessments_result.scalars().all()
+    assessments = await get_latest_assessments(db)
 
-    by_pillar: Dict[str, Dict] = {}
     status_counts = {"implemented": 0, "partial": 0, "planned": 0, "not_implemented": 0, "na": 0}
 
     for a in assessments:
-        status_counts[a.status] = status_counts.get(a.status, 0) + 1
+        if a.status in status_counts:
+            status_counts[a.status] += 1
+        elif a.status == "partially_implemented":
+             status_counts["partial"] += 1
 
-    total = len(assessments)
+    total_assessed = len(assessments)
     implemented = status_counts["implemented"]
     sprs_score = max(-203, round(110 - (status_counts["not_implemented"] + status_counts["partial"] * 0.5)))
+
+    # Get total controls count for accurate percentage
+    controls_result = await db.execute(select(func.count(ControlRecord.id)))
+    total_controls = controls_result.scalar_one()
 
     return {
         "system": "AGI Corp CMMC System",
         "generated_at": datetime.utcnow().isoformat(),
         "sprs_score": sprs_score,
-        "total_controls": total,
+        "total_controls": total_controls,
+        "assessed_controls": total_assessed,
         "status_breakdown": status_counts,
-        "overall_compliance_pct": round(implemented / total * 100, 1) if total else 0,
+        "overall_compliance_pct": round(implemented / total_controls * 100, 1) if total_controls else 0,
         "zt_pillars": [
             {"pillar": "User", "domains": ["AC", "IA", "PS"]},
             {"pillar": "Device", "domains": ["CM", "MA", "PE"]},

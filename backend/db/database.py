@@ -3,9 +3,10 @@ Database initialization and session management.
 AGI Corporation CMMC Platform 2026
 """
 import os
+import json
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON
+from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select
 from datetime import datetime
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cmmc.db")
@@ -29,7 +30,7 @@ class ControlRecord(Base):
     __tablename__ = "controls"
     id = Column(String, primary_key=True, index=True)  # e.g. AC.1.001
     domain = Column(String, index=True)
-    level = Column(Integer)
+    level = Column(String)
     title = Column(String)
     description = Column(Text)
     zt_pillar = Column(String)  # User/Device/Network/App/Data/Visibility/Automation
@@ -90,6 +91,28 @@ async def init_db():
     """Create all tables on startup."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Seed controls if empty
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(ControlRecord))
+        if not result.scalars().first():
+            schema_path = os.getenv("OSCAL_CATALOG_PATH", "./schema/cmmc_oscal_catalog.json")
+            if os.path.exists(schema_path):
+                with open(schema_path) as f:
+                    data = json.load(f)
+                    controls = data.get("controls", [])
+                    for c in controls:
+                        db_ctrl = ControlRecord(
+                            id=c["id"],
+                            domain=c["domain"],
+                            level=c["level"],
+                            title=c["title"],
+                            description=c["description"],
+                            nist_mapping=c.get("nist_mapping"),
+                            score_value=c.get("weight", 1)
+                        )
+                        session.add(db_ctrl)
+                await session.commit()
 
 
 async def get_db():

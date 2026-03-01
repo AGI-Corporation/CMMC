@@ -87,7 +87,6 @@ mcp = FastApiMCP(
     app,
     name="CMMC Compliance MCP",
     description="MCP server for CMMC 2.0 compliance automation. Provides tools for control lookup, evidence collection, assessment scoring, SPRS calculation, and SSP/POAM generation.",
-    base_url=f"http://{os.getenv('HOST', 'localhost')}:{os.getenv('PORT', '8000')}",
 )
 
 mcp.mount()

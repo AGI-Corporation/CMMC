@@ -1,0 +1,49 @@
+{
+  "controls": [
+    {
+      "id": "AC.1.001",
+      "title": "Limit system access to authorized users",
+      "description": "Limit information system access to authorized users, processes acting on behalf of authorized users, and devices (including other information systems).",
+      "domain": "AC",
+      "level": "Level 1",
+      "nist_mapping": "3.1.1",
+      "weight": 5
+    },
+    {
+      "id": "AC.1.002",
+      "title": "Limit system access to types of transactions and functions",
+      "description": "Limit information system access to the types of transactions and functions that authorized users are permitted to execute.",
+      "domain": "AC",
+      "level": "Level 1",
+      "nist_mapping": "3.1.2",
+      "weight": 5
+    },
+    {
+      "id": "AC.2.006",
+      "title": "Limit access to CUI on system media",
+      "description": "Limit access to CUI on system media to authorized users.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.6",
+      "weight": 5
+    },
+    {
+      "id": "IA.1.076",
+      "title": "Identify system users",
+      "description": "Identify information system users, processes acting on behalf of users, or devices.",
+      "domain": "IA",
+      "level": "Level 1",
+      "nist_mapping": "3.5.1",
+      "weight": 3
+    },
+    {
+      "id": "SC.1.175",
+      "title": "Monitor system boundaries",
+      "description": "Monitor, control, and protect organizational communications (i.e., information transmitted or received by organizational information systems) at the external boundaries and key internal boundaries of the information systems.",
+      "domain": "SC",
+      "level": "Level 1",
+      "nist_mapping": "3.13.1",
+      "weight": 3
+    }
+  ]
+}

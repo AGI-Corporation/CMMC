@@ -2,11 +2,14 @@
 Assessment Router - SPRS score calculation and compliance dashboard.
 These endpoints become MCP tools: calculate_sprs_score, get_compliance_dashboard.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Dict, List, Optional
-import json
 import os
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from backend.db.database import get_db, ControlRecord, AssessmentRecord
 
 router = APIRouter()
 
@@ -57,20 +60,25 @@ class SPRSResult(BaseModel):
     summary="Get Compliance Dashboard",
     description="Get overall CMMC compliance posture summary including implementation percentages, SPRS score, and breakdown by domain and level."
 )
-async def get_compliance_dashboard():
-    from backend.routers.controls import _assessment_store, load_controls
-    controls = load_controls()
+async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ControlRecord))
+    controls = result.scalars().all()
     
     by_domain = {}
-    by_level = {"Level 1": {"total": 0, "implemented": 0}, "Level 2": {"total": 0, "implemented": 0}}
+    by_level = {"Level 1": {"total": 0, "implemented": 0}, "Level 2": {"total": 0, "implemented": 0}, "Level 3": {"total": 0, "implemented": 0}}
     implemented = not_implemented = partial = not_started = not_applicable = 0
     sprs_score = 110  # Start at max, deduct for non-implemented
 
     for c in controls:
-        domain = c["domain"]
-        level = c["level"]
-        cid = c["id"]
-        status = _assessment_store.get(cid, {}).get("status", "not_started")
+        domain = c.domain
+        level = c.level
+        cid = c.id
+
+        # Get latest assessment
+        a_query = select(AssessmentRecord).where(AssessmentRecord.control_id == cid).order_by(AssessmentRecord.assessment_date.desc())
+        a_result = await db.execute(a_query)
+        assessment = a_result.scalars().first()
+        status = assessment.status if assessment else "not_started"
 
         if domain not in by_domain:
             by_domain[domain] = {"total": 0, "implemented": 0, "not_implemented": 0}
@@ -128,20 +136,25 @@ async def get_compliance_dashboard():
     summary="Calculate SPRS Score",
     description="Calculate the DoD Supplier Performance Risk System (SPRS) score based on current control implementation status. Score ranges from -203 to 110."
 )
-async def calculate_sprs_score():
-    from backend.routers.controls import _assessment_store, load_controls
+async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
     import datetime
-    controls = load_controls()
+    result = await db.execute(select(ControlRecord))
+    controls = result.scalars().all()
     sprs = 110
     deductions_list = []
     implemented_count = not_implemented_count = 0
 
     for c in controls:
-        cid = c["id"]
-        status = _assessment_store.get(cid, {}).get("status", "not_started")
+        cid = c.id
+        # Get latest assessment
+        a_query = select(AssessmentRecord).where(AssessmentRecord.control_id == cid).order_by(AssessmentRecord.assessment_date.desc())
+        a_result = await db.execute(a_query)
+        assessment = a_result.scalars().first()
+        status = assessment.status if assessment else "not_started"
+
         if status == "implemented":
             implemented_count += 1
-        elif status in ["not_implemented", "not_started"]:
+        elif status in ["not_implemented", "not_started", "partially_implemented"]:
             not_implemented_count += 1
             deduction = SPRS_DEDUCTIONS.get(cid, 1)
             sprs -= deduction
