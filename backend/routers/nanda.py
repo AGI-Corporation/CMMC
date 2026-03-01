@@ -2,7 +2,7 @@
 NANDA Agent Registry Router
 Provides verified agent discovery and attestation facts.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from typing import List, Dict
 from backend.models.nanda import AgentFacts, TrustLevel, Protocol, AgentRegistryResponse
 
