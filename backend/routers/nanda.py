@@ -55,7 +55,7 @@ def seed_registry():
             version="2.0.0",
             trust_level=TrustLevel.VERIFIED,
             protocols=[Protocol.HTTPS, Protocol.MCP],
-            capabilities=["Compliance Analysis", "Remediation Planning", "All ZT Pillars"],
+            capabilities=["Compliance Analysis", "Remediation Planning", "All ZT Pillars", "RAG Evaluation"],
             endpoint="/api/agents/mistral"
         ),
         AgentFacts(

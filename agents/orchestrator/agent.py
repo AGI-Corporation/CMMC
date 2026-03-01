@@ -306,13 +306,13 @@ async def trigger_full_run(framework: str = "CMMC", db: AsyncSession = Depends(g
     sprs = await _orchestrator.compute_sprs_score(db, framework=framework)
     scorecard = await _orchestrator.compute_zt_scorecard(db, framework=framework)
 
-    # 3. Generate AI Summary with Mistral
+    # 3. Generate AI Summary with Mistral & Evaluate RAG
     findings_summary = ""
-    for agent, res in agent_results.items():
+    for agent_key, res in agent_results.items():
         if isinstance(res, list):
-            findings_summary += f"- {agent.upper()}: {len(res)} controls assessed.\n"
+            findings_summary += f"- {agent_key.upper()}: {len(res)} controls assessed.\n"
         elif isinstance(res, dict):
-            findings_summary += f"- {agent.upper()}: {res.get('status', 'completed')} assessment.\n"
+            findings_summary += f"- {agent_key.upper()}: {res.get('status', 'completed')} assessment.\n"
 
     summary_context = f"""
     Assessment completed for framework {framework}.
@@ -322,9 +322,17 @@ async def trigger_full_run(framework: str = "CMMC", db: AsyncSession = Depends(g
     {findings_summary}
     """
 
+    summary_query = "Generate a 2-sentence executive summary of this compliance assessment run."
     ai_summary = await mistral_agent.answer_compliance_question(
-        "Generate a 2-sentence executive summary of this compliance assessment run.",
+        summary_query,
         context=summary_context
+    )
+
+    # Mistral-as-a-Judge RAG Evaluation
+    rag_eval = await mistral_agent.evaluate_rag(
+        query=summary_query,
+        retrieved_context=summary_context,
+        generated_answer=ai_summary
     )
 
     # 4. Record Orchestrator Run
@@ -348,6 +356,7 @@ async def trigger_full_run(framework: str = "CMMC", db: AsyncSession = Depends(g
         controls_evaluated=list(set(controls_evaluated)),
         findings={
             "ai_summary": ai_summary,
+            "rag_evaluation": rag_eval.dict() if rag_eval else None,
             "sprs": sprs,
             "scorecard": scorecard,
             "agent_runs": agent_results

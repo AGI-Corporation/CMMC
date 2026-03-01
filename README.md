@@ -98,7 +98,8 @@ CMMC/
 | Schema | NIST OSCAL JSON (machine-readable) |
 | Database | SQLite (dev) / PostgreSQL (prod) |
 | Frontend | React 19 + TypeScript + Tailwind CSS |
-| AI | OpenAI GPT-4 / Claude / Ollama (local) |
+| AI | Mistral Large 2 / Codestral / OpenAI / Claude / Ollama |
+| AI Quality | Mistral-as-a-Judge RAG Evaluation |
 | GRC Automation | ComplianceCow MCP |
 | Repo Automation | GitHub MCP Server |
 
@@ -177,6 +178,7 @@ Add to your `claude_desktop_config.json`:
 
 Once the server is running, the following MCP tools are available to AI agents:
 
+- `evaluate_rag` - Evaluate AI response quality (context relevance, groundedness)
 - `list_controls` - List all CMMC controls by domain/level
 - `get_control_detail` - Get full details of a specific control
 - `submit_assessment` - Submit assessment status for a control
