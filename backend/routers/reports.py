@@ -23,18 +23,19 @@ router = APIRouter()
 
 @router.get("/ssp", summary="Generate System Security Plan (SSP) in Markdown")
 async def generate_ssp(
-    system_name: str = "AGI Corp CMMC System",
+    system_name: str = "AGI Corp Compliance System",
     classification: str = "CUI",
+    framework: str = "CMMC",
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Generate a NIST SP 800-171 / CMMC 2.0 SSP in Markdown format.
+    Generate a framework-specific SSP in Markdown format.
     Includes: system overview, control family summaries, implementation status.
     """
     # Fetch latest assessments
     assessments_map = await get_latest_assessments(db)
-    assessments = list(assessments_map.values())
-    controls_result = await db.execute(select(ControlRecord))
+    assessments = [a for a in assessments_map.values() if a.framework == framework]
+    controls_result = await db.execute(select(ControlRecord).where(ControlRecord.framework == framework))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
     # Count by status
@@ -59,7 +60,7 @@ async def generate_ssp(
 
 **Classification:** {classification}  
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
-**Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
+**Framework:** {framework}
 **SPRS Score Estimate:** {sprs_estimate}  
 
 ---
@@ -128,7 +129,8 @@ async def generate_ssp(
 
 @router.get("/poam", summary="Generate POA&M CSV for unimplemented controls")
 async def generate_poam(
-    system_name: str = "AGI Corp CMMC System",
+    system_name: str = "AGI Corp Compliance System",
+    framework: str = "CMMC",
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -136,8 +138,8 @@ async def generate_poam(
     Includes all partial and not_implemented controls.
     """
     assessments_map = await get_latest_assessments(db)
-    assessments = list(assessments_map.values())
-    controls_result = await db.execute(select(ControlRecord))
+    assessments = [a for a in assessments_map.values() if a.framework == framework]
+    controls_result = await db.execute(select(ControlRecord).where(ControlRecord.framework == framework))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
     output = io.StringIO()

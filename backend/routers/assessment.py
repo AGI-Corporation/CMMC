@@ -204,24 +204,29 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
     findings = run.findings
     promoted_count = 0
 
+    def create_assessment(control_id, status, confidence, notes, evidence_ids):
+        return AssessmentRecord(
+            id=str(uuid.uuid4()),
+            framework=run.framework,
+            control_id=control_id,
+            status=status,
+            confidence=confidence,
+            notes=f"Promoted from {run.agent_type} agent run {run_id}. {notes}",
+            evidence_ids=evidence_ids or [],
+            assessor=f"Agent: {run.agent_type}",
+            assessment_date=datetime.now(UTC),
+            poam_required="true" if status in ["partial", "not_implemented", "partially_implemented"] else "false",
+            fingerprint=run.fingerprint
+        )
+
     # Logic for ICAM promotion
     if run.agent_type == "icam":
         results = findings.get("results", [])
         for res in results:
-            new_ass = AssessmentRecord(
-                id=str(uuid.uuid4()),
-                framework=run.framework,
-                control_id=res["control_id"],
-                status=res["status"],
-                confidence=res["confidence"],
-                notes=f"Promoted from {run.agent_type} agent run {run_id}. Findings: {', '.join(res['findings'])}",
-                evidence_ids=[res["evidence_id"]],
-                assessor=f"Agent: {run.agent_type}",
-                assessment_date=datetime.now(UTC),
-                poam_required="true" if res["status"] in ["partial", "not_implemented", "partially_implemented"] else "false",
-                fingerprint=run.fingerprint # Inherit fingerprint for provenance
-            )
-            db.add(new_ass)
+            db.add(create_assessment(
+                res["control_id"], res["status"], res["confidence"],
+                f"Findings: {', '.join(res['findings'])}", [res["evidence_id"]]
+            ))
             promoted_count += 1
 
     # Logic for DevSecOps promotion
@@ -229,82 +234,24 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
         controls = run.controls_evaluated
         overall_conf = findings.get("overall_confidence", 0.0)
         status = findings.get("status", "partially_implemented")
+        evidence_id = findings.get("image_scan", {}).get("evidence_id")
 
         for cid in controls:
-            new_ass = AssessmentRecord(
-                id=str(uuid.uuid4()),
-                framework=run.framework,
-                control_id=cid,
-                status=status,
-                confidence=overall_conf,
-                notes=f"Promoted from {run.agent_type} agent run {run_id} for service {findings.get('service')}.",
-                evidence_ids=[findings.get("image_scan", {}).get("evidence_id")],
-                assessor=f"Agent: {run.agent_type}",
-                assessment_date=datetime.now(UTC),
-                poam_required="true" if status in ["partial", "not_implemented", "partially_implemented"] else "false",
-                fingerprint=run.fingerprint
-            )
-            db.add(new_ass)
+            db.add(create_assessment(
+                cid, status, overall_conf,
+                f"For service {findings.get('service')}.", [evidence_id] if evidence_id else []
+            ))
             promoted_count += 1
 
-    # Logic for Infra agent promotion
-    elif run.agent_type == "infra":
+    # Generic logic for multi-finding agents (infra, data, nist, hipaa, fhir)
+    elif run.agent_type in ["infra", "data", "nist", "hipaa", "fhir"]:
         agent_findings = findings.get("findings", [])
+        evidence_id = findings.get("evidence_id")
         for f in agent_findings:
-            new_ass = AssessmentRecord(
-                id=str(uuid.uuid4()),
-                framework=run.framework,
-                control_id=f["control_id"],
-                status=f["status"],
-                confidence=f["confidence"],
-                notes=f"Promoted from {run.agent_type} agent run {run_id}. Finding: {f['finding']}",
-                evidence_ids=[findings.get("evidence_id")],
-                assessor=f"Agent: {run.agent_type}",
-                assessment_date=datetime.now(UTC),
-                poam_required="true" if f["status"] in ["partial", "not_implemented", "partially_implemented"] else "false",
-                fingerprint=run.fingerprint
-            )
-            db.add(new_ass)
-            promoted_count += 1
-
-    # Generic logic for specialist agents (nist, hipaa, fhir)
-    elif run.agent_type in ["nist", "hipaa", "fhir"]:
-        agent_findings = findings.get("findings", [])
-        for f in agent_findings:
-            new_ass = AssessmentRecord(
-                id=str(uuid.uuid4()),
-                framework=run.framework,
-                control_id=f["control_id"],
-                status=f["status"],
-                confidence=f["confidence"],
-                notes=f"Promoted from {run.agent_type} agent run {run_id}. Finding: {f['finding']}",
-                evidence_ids=[findings.get("evidence_id")],
-                assessor=f"Agent: {run.agent_type}",
-                assessment_date=datetime.now(UTC),
-                poam_required="true" if f["status"] in ["partial", "not_implemented", "partially_implemented"] else "false",
-                fingerprint=run.fingerprint
-            )
-            db.add(new_ass)
-            promoted_count += 1
-
-    # Logic for Data agent promotion
-    elif run.agent_type == "data":
-        agent_findings = findings.get("findings", [])
-        for f in agent_findings:
-            new_ass = AssessmentRecord(
-                id=str(uuid.uuid4()),
-                framework=run.framework,
-                control_id=f["control_id"],
-                status=f["status"],
-                confidence=f["confidence"],
-                notes=f"Promoted from {run.agent_type} agent run {run_id}. Finding: {f['finding']}",
-                evidence_ids=[findings.get("evidence_id")],
-                assessor=f"Agent: {run.agent_type}",
-                assessment_date=datetime.now(UTC),
-                poam_required="true" if f["status"] in ["partial", "not_implemented", "partially_implemented"] else "false",
-                fingerprint=run.fingerprint
-            )
-            db.add(new_ass)
+            db.add(create_assessment(
+                f["control_id"], f["status"], f["confidence"],
+                f"Finding: {f['finding']}", [evidence_id] if evidence_id else []
+            ))
             promoted_count += 1
 
     await db.commit()
