@@ -1,4 +1,4 @@
-# CMMC Compliance Hackathon Platform
+# CMMC Compliance Framework
 
 > AI-powered CMMC 2.0 compliance automation platform built for the AGI Corporation hackathon. Leverages Model Context Protocol (MCP), OSCAL machine-readable schemas, and FastAPI to automate evidence collection, control assessments, and SSP/POAM generation.
 
