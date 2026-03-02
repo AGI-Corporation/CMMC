@@ -220,7 +220,6 @@ const Dashboard: React.FC = () => {
         </button>
       </div>
 
-      <ControlExplorer framework={framework} />
     </div>
   );
 };

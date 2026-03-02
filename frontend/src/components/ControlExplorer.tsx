@@ -17,7 +17,8 @@ interface ControlResponse {
   poam_required: boolean;
 }
 
-const ControlExplorer: React.FC<{ framework?: string }> = ({ framework = 'CMMC' }) => {
+const ControlExplorer: React.FC<{ framework?: string }> = ({ framework: initialFramework }) => {
+  const [framework, setFramework] = useState(initialFramework || 'CMMC');
   const [controls, setControls] = useState<ControlResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -50,11 +51,27 @@ const ControlExplorer: React.FC<{ framework?: string }> = ({ framework = 'CMMC' 
   const domains = Array.from(new Set(controls.map(c => c.control.domain))).sort();
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 mt-12 overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
       <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-        <div>
-          <h3 className="text-lg font-bold text-gray-800">{framework} Control Explorer</h3>
-          <p className="text-xs text-gray-500 uppercase tracking-widest">Browse, filter, and audit all {framework} practices</p>
+        <div className="flex items-center gap-6">
+          <div>
+            <h3 className="text-lg font-bold text-gray-800">{framework} Control Explorer</h3>
+            <p className="text-xs text-gray-500 uppercase tracking-widest">Browse, filter, and audit all {framework} practices</p>
+          </div>
+          <div className="h-8 w-px bg-gray-200"></div>
+          <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Framework</label>
+              <select
+                  value={framework}
+                  onChange={(e) => setFramework(e.target.value)}
+                  className="bg-white border border-gray-300 rounded-md px-2 py-1 text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                  <option value="CMMC">CMMC 2.0</option>
+                  <option value="NIST">NIST 800-171</option>
+                  <option value="HIPAA">HIPAA Security</option>
+                  <option value="FHIR">FHIR Privacy</option>
+              </select>
+          </div>
         </div>
         <div className="flex gap-4">
             <select
