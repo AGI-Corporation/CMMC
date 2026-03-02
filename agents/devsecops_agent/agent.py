@@ -5,14 +5,17 @@ AGI Corporation 2026
 Aligns with CMMC CM/SI domains, Fulcrum LOE 2, Cloud Security Playbook Play 19-21.
 Responsibilities: container scanning, SBOM generation, pipeline gate evaluation.
 """
+
 import uuid
-from datetime import datetime, UTC
-from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import get_db, AgentRunRecord
+
+from backend.db.database import AgentRunRecord, get_db
 
 
 class SeverityLevel(str, Enum):
@@ -33,20 +36,35 @@ class DevSecOpsAgent:
     def __init__(self, mock_mode: bool = True):
         self.mock_mode = mock_mode
 
-    def scan_container_image(self, image_name: str, image_tag: str = "latest",
-                              base_image: Optional[str] = None) -> Dict[str, Any]:
+    def scan_container_image(
+        self,
+        image_name: str,
+        image_tag: str = "latest",
+        base_image: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Simulate CVE scan. Production: Trivy/Grype. Maps to NIST 800-190, CMMC SI.1.210."""
-        cves = [
-            {"cve_id": "CVE-2024-1234", "severity": "high", "package": "openssl",
-             "version": "3.0.1", "fixed_in": "3.0.2", "cmmc_controls": ["SI.1.210", "SI.2.214"]}
-        ] if "vulnerable" in image_name else []
+        cves = (
+            [
+                {
+                    "cve_id": "CVE-2024-1234",
+                    "severity": "high",
+                    "package": "openssl",
+                    "version": "3.0.1",
+                    "fixed_in": "3.0.2",
+                    "cmmc_controls": ["SI.1.210", "SI.2.214"],
+                }
+            ]
+            if "vulnerable" in image_name
+            else []
+        )
         return {
             "image": f"{image_name}:{image_tag}",
             "base_image": base_image,
             "base_image_approved": base_image in self.APPROVED_BASE_IMAGES,
             "overall_risk": "pass" if not cves else "high",
             "cve_findings": cves,
-            "critical_count": 0, "high_count": len(cves),
+            "critical_count": 0,
+            "high_count": len(cves),
             "evidence_id": str(uuid.uuid4()),
             "scanned_at": datetime.now(UTC).isoformat(),
             "cmmc_controls": ["SI.1.210", "SI.2.214", "CM.2.061", "CM.3.068"],
@@ -56,14 +74,34 @@ class DevSecOpsAgent:
     def generate_sbom(self, service_name: str) -> Dict[str, Any]:
         """Generate CycloneDX SBOM. Maps to EO 14028, CMMC CM.2.062."""
         components = [
-            {"name": "fastapi", "version": "0.111.0", "license": "MIT",
-             "supplier": "tiangolo", "cves": 0},
-            {"name": "mistralai", "version": "0.4.2", "license": "Apache-2.0",
-             "supplier": "Mistral AI", "cves": 0},
-            {"name": "sqlalchemy", "version": "2.0.30", "license": "MIT",
-             "supplier": "SQLAlchemy", "cves": 0},
-            {"name": "pydantic", "version": "2.7.0", "license": "MIT",
-             "supplier": "pydantic", "cves": 0},
+            {
+                "name": "fastapi",
+                "version": "0.111.0",
+                "license": "MIT",
+                "supplier": "tiangolo",
+                "cves": 0,
+            },
+            {
+                "name": "mistralai",
+                "version": "0.4.2",
+                "license": "Apache-2.0",
+                "supplier": "Mistral AI",
+                "cves": 0,
+            },
+            {
+                "name": "sqlalchemy",
+                "version": "2.0.30",
+                "license": "MIT",
+                "supplier": "SQLAlchemy",
+                "cves": 0,
+            },
+            {
+                "name": "pydantic",
+                "version": "2.7.0",
+                "license": "MIT",
+                "supplier": "pydantic",
+                "cves": 0,
+            },
         ]
         return {
             "sbom_format": "CycloneDX-1.5",
@@ -80,8 +118,12 @@ class DevSecOpsAgent:
     def evaluate_pipeline_gates(self, pipeline_id: str) -> Dict[str, Any]:
         """Evaluate CI/CD security gates. Maps to Cloud Security Playbook Play 20."""
         gate_results = {
-            "sast": "pass", "secret_scan": "pass", "dependency_check": "warn",
-            "container_scan": "pass", "sbom_generation": "pass", "image_signing": "fail",
+            "sast": "pass",
+            "secret_scan": "pass",
+            "dependency_check": "warn",
+            "container_scan": "pass",
+            "sbom_generation": "pass",
+            "image_signing": "fail",
         }
         failed = [g for g, s in gate_results.items() if s == "fail"]
         warned = [g for g, s in gate_results.items() if s == "warn"]
@@ -102,7 +144,9 @@ class DevSecOpsAgent:
             "evaluated_at": datetime.now(UTC).isoformat(),
         }
 
-    async def run_full_assessment(self, db: AsyncSession, service_name: str = "cmmc-api", trigger: str = "manual") -> Dict[str, Any]:
+    async def run_full_assessment(
+        self, db: AsyncSession, service_name: str = "cmmc-api", trigger: str = "manual"
+    ) -> Dict[str, Any]:
         """Run complete DevSecOps assessment pipeline."""
         image_scan = self.scan_container_image(service_name)
         sbom = self.generate_sbom(service_name)
@@ -131,11 +175,17 @@ class DevSecOpsAgent:
             agent_type="devsecops",
             trigger=trigger,
             scope=service_name,
-            controls_evaluated=list(set(image_scan["cmmc_controls"] + sbom["cmmc_controls"] + pipeline["cmmc_controls"])),
+            controls_evaluated=list(
+                set(
+                    image_scan["cmmc_controls"]
+                    + sbom["cmmc_controls"]
+                    + pipeline["cmmc_controls"]
+                )
+            ),
             findings=result,
             status="completed",
             created_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC)
+            completed_at=datetime.now(UTC),
         )
         db.add(record)
         await db.commit()
@@ -147,7 +197,9 @@ router = APIRouter()
 _dso = DevSecOpsAgent()
 
 
-@router.get("/assess/{service_name}", summary="Run full DevSecOps ZT Application assessment")
+@router.get(
+    "/assess/{service_name}", summary="Run full DevSecOps ZT Application assessment"
+)
 async def assess_service(service_name: str, db: AsyncSession = Depends(get_db)):
     """Container scan + SBOM + pipeline gates - ZT Application Pillar evidence."""
     return await _dso.run_full_assessment(db, service_name)
