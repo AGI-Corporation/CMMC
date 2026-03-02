@@ -2,12 +2,15 @@
 Database initialization and session management.
 AGI Corporation CMMC Platform 2026
 """
-import os
+
 import json
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select
-from datetime import datetime, UTC
+import os
+from datetime import UTC, datetime
+
+from sqlalchemy import (JSON, Column, DateTime, Float, Index, Integer, String,
+                        Text, func, select)
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cmmc.db")
 
@@ -17,9 +20,7 @@ engine = create_async_engine(
     connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
 )
 
-AsyncSessionLocal = sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
-)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
@@ -35,10 +36,14 @@ class ControlRecord(Base):
     description = Column(Text)
     zt_pillar = Column(String)  # User/Device/Network/App/Data/Visibility/Automation
     nist_mapping = Column(String)  # e.g. 3.1.1
-    status = Column(String, default="not_implemented")  # implemented/partial/planned/not_implemented
+    status = Column(
+        String, default="not_implemented"
+    )  # implemented/partial/planned/not_implemented
     score_value = Column(Integer, default=1)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
 
 
 class EvidenceRecord(Base):
@@ -72,6 +77,8 @@ class AssessmentRecord(Base):
     next_review = Column(DateTime)
     poam_required = Column(String, default="false")
 
+    __table_args__ = (Index("idx_control_date", "control_id", "assessment_date"),)
+
 
 class AgentRunRecord(Base):
     __tablename__ = "agent_runs"
@@ -96,7 +103,9 @@ async def init_db():
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(ControlRecord))
         if not result.scalars().first():
-            schema_path = os.getenv("OSCAL_CATALOG_PATH", "./schema/cmmc_oscal_catalog.json")
+            schema_path = os.getenv(
+                "OSCAL_CATALOG_PATH", "./schema/cmmc_oscal_catalog.json"
+            )
             if os.path.exists(schema_path):
                 with open(schema_path) as f:
                     data = json.load(f)
@@ -109,7 +118,7 @@ async def init_db():
                             title=c["title"],
                             description=c["description"],
                             nist_mapping=c.get("nist_mapping"),
-                            score_value=c.get("weight", 1)
+                            score_value=c.get("weight", 1),
                         )
                         session.add(db_ctrl)
                 await session.commit()
@@ -126,3 +135,25 @@ async def get_db():
             raise
         finally:
             await session.close()
+
+
+async def get_latest_assessments(db: AsyncSession):
+    """
+    Centralized utility to fetch the latest assessment record for each control.
+    Uses an optimized subquery with composite index support.
+    """
+    sub_q = (
+        select(
+            AssessmentRecord.control_id,
+            func.max(AssessmentRecord.assessment_date).label("max_date"),
+        )
+        .group_by(AssessmentRecord.control_id)
+        .subquery()
+    )
+    query = select(AssessmentRecord).join(
+        sub_q,
+        (AssessmentRecord.control_id == sub_q.c.control_id)
+        & (AssessmentRecord.assessment_date == sub_q.c.max_date),
+    )
+    result = await db.execute(query)
+    return {a.control_id: a for a in result.scalars().all()}

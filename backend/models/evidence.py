@@ -2,10 +2,12 @@
 Pydantic models for Evidence artifacts.
 AGI Corporation 2026
 """
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
-from enum import Enum
+
 from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class EvidenceType(str, Enum):
@@ -52,6 +54,7 @@ class EvidenceListResponse(BaseModel):
 
 class EvidenceSchema(BaseModel):
     """Canonical evidence schema for agent interoperability."""
+
     id: str
     type: EvidenceType
     source_system: str
