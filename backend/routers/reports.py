@@ -15,33 +15,9 @@ import csv
 import io
 import json
 
-from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord
+from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord, get_latest_assessments
 
 router = APIRouter()
-
-async def get_latest_assessments(db: AsyncSession):
-    # Subquery for latest assessment date per control_id
-    subquery = (
-        select(
-            AssessmentRecord.control_id,
-            func.max(AssessmentRecord.assessment_date).label("max_date")
-        )
-        .group_by(AssessmentRecord.control_id)
-        .subquery()
-    )
-
-    # Join with the original table to get full records
-    query = (
-        select(AssessmentRecord)
-        .join(
-            subquery,
-            (AssessmentRecord.control_id == subquery.c.control_id) &
-            (AssessmentRecord.assessment_date == subquery.c.max_date)
-        )
-    )
-
-    result = await db.execute(query)
-    return result.scalars().all()
 
 @router.get("/ssp", summary="Generate System Security Plan (SSP) in Markdown")
 async def generate_ssp(
@@ -54,7 +30,7 @@ async def generate_ssp(
     Includes: system overview, control family summaries, implementation status.
     """
     # Fetch latest assessments
-    assessments = await get_latest_assessments(db)
+    assessments = await get_latest_assessments(db, as_dict=False)
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
@@ -146,7 +122,7 @@ async def generate_poam(
     Generate a Plan of Action & Milestones (POA&M) as CSV.
     Includes all partial and not_implemented controls.
     """
-    assessments = await get_latest_assessments(db)
+    assessments = await get_latest_assessments(db, as_dict=False)
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
@@ -189,7 +165,7 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Return compliance posture summary for dashboard rendering."""
-    assessments = await get_latest_assessments(db)
+    assessments = await get_latest_assessments(db, as_dict=False)
 
     status_counts = {"implemented": 0, "partial": 0, "planned": 0, "not_implemented": 0, "na": 0}
 
