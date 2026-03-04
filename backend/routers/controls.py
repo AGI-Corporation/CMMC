@@ -7,7 +7,7 @@ from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from backend.db.database import get_db, ControlRecord, AssessmentRecord
+from backend.db.database import get_db, ControlRecord, AssessmentRecord, get_latest_assessments
 from backend.models.control import (
     Control, ControlResponse, ControlListResponse,
     ControlUpdate, CMMCLevel, ControlDomain, ImplementationStatus
@@ -27,14 +27,10 @@ async def list_controls(
     status: Optional[ImplementationStatus] = Query(None, description="Filter by implementation status"),
     db: AsyncSession = Depends(get_db)
 ):
-    # Base query for controls
-    query = select(ControlRecord)
-    if level:
-        query = query.where(ControlRecord.level == level.value)
-    if domain:
-        query = query.where(ControlRecord.domain == domain.value)
-
-    # Efficiently get latest assessments for all relevant controls
+    """
+    Optimized list_controls using single query JOIN for performance.
+    """
+    # 1. Get latest assessment subquery
     sub_q = (
         select(
             AssessmentRecord.control_id,
@@ -44,30 +40,37 @@ async def list_controls(
         .subquery()
     )
 
-    assessments_q = (
-        select(AssessmentRecord)
-        .join(
+    # 2. Main query joining Controls with latest Assessments
+    query = (
+        select(ControlRecord, AssessmentRecord)
+        .outerjoin(
             sub_q,
+            ControlRecord.id == sub_q.c.control_id
+        )
+        .outerjoin(
+            AssessmentRecord,
             (AssessmentRecord.control_id == sub_q.c.control_id) &
             (AssessmentRecord.assessment_date == sub_q.c.max_date)
         )
     )
 
-    ctrl_result = await db.execute(query)
-    controls_data = ctrl_result.scalars().all()
+    # 3. Apply Filters at DB level
+    if level:
+        query = query.where(ControlRecord.level == level.value)
+    if domain:
+        query = query.where(ControlRecord.domain == domain.value)
+    if status:
+        if status.value == "not_started":
+            # "not_started" means no assessment record exists
+            query = query.where(AssessmentRecord.id.is_(None))
+        else:
+            query = query.where(AssessmentRecord.status == status.value)
 
-    ass_result = await db.execute(assessments_q)
-    assessments_map = {a.control_id: a for a in ass_result.scalars().all()}
+    result = await db.execute(query)
+    rows = result.all()
 
-    responses = []
-    for c in controls_data:
-        assessment = assessments_map.get(c.id)
-        impl_status = assessment.status if assessment else "not_started"
-
-        if status and impl_status != status.value:
-            continue
-
-        responses.append(ControlResponse(
+    responses = [
+        ControlResponse(
             control=Control(
                 id=c.id,
                 title=c.title,
@@ -77,12 +80,14 @@ async def list_controls(
                 nist_mapping=c.nist_mapping,
                 weight=c.score_value
             ),
-            implementation_status=impl_status,
-            evidence_count=len(assessment.evidence_ids) if assessment and isinstance(assessment.evidence_ids, list) else 0,
-            notes=assessment.notes if assessment else None,
-            confidence=assessment.confidence if assessment else 0.0,
-            poam_required=(assessment.poam_required == "true") if assessment else False
-        ))
+            implementation_status=a.status if a else "not_started",
+            evidence_count=len(a.evidence_ids) if a and isinstance(a.evidence_ids, list) else 0,
+            notes=a.notes if a else None,
+            confidence=a.confidence if a else 0.0,
+            poam_required=(a.poam_required == "true") if a else False
+        )
+        for c, a in rows
+    ]
 
     return ControlListResponse(controls=responses, total=len(responses), level_filter=level, domain_filter=domain)
 
