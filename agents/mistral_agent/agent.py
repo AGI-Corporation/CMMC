@@ -6,14 +6,17 @@ This agent uses Mistral AI models (mistral-large, mistral-medium, codestral)
 to analyze compliance gaps, generate remediation guidance, assess control
 implementation evidence, and produce POAM recommendations.
 """
-import os
+
 import json
+import os
 import uuid
-from datetime import datetime, UTC
-from typing import Optional, List, Dict, Any
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Optional
+
 from mistralai import Mistral
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.db.database import AgentRunRecord, get_db
 
 # ─── Mistral Configuration ─────────────────────────────────────────────────────
@@ -33,6 +36,7 @@ class MistralComplianceAgent:
         if USE_LOCAL:
             # Use Ollama local endpoint for air-gapped environments
             from openai import AsyncOpenAI
+
             self.client = AsyncOpenAI(
                 base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
                 api_key="ollama",
@@ -42,7 +46,9 @@ class MistralComplianceAgent:
         else:
             if not MISTRAL_API_KEY:
                 self.client = None
-                print("Warning: MISTRAL_API_KEY not set. Mistral agent will operate in mock mode.")
+                print(
+                    "Warning: MISTRAL_API_KEY not set. Mistral agent will operate in mock mode."
+                )
             else:
                 self.client = Mistral(api_key=MISTRAL_API_KEY)
             self.model = MISTRAL_MODEL
@@ -53,17 +59,24 @@ class MistralComplianceAgent:
         """Send a chat completion request to Mistral."""
         if not self.client:
             # Return mock JSON response if no client
-            return json.dumps({
-                "gap_summary": "Mock analysis: Mistral API key missing.",
-                "severity": "medium",
-                "zt_impact": "Simulated impact on ZT pillar.",
-                "confidence_score": 0.5,
-                "remediation_steps": ["Configure MISTRAL_API_KEY"],
-                "estimated_effort_days": 1,
-                "poam_entry": {"milestone": "Setup API", "completion_date": "TBD", "responsible_party": "Admin", "resources": "API Key"},
-                "overall_risk": "medium",
-                "security_issues": []
-            })
+            return json.dumps(
+                {
+                    "gap_summary": "Mock analysis: Mistral API key missing.",
+                    "severity": "medium",
+                    "zt_impact": "Simulated impact on ZT pillar.",
+                    "confidence_score": 0.5,
+                    "remediation_steps": ["Configure MISTRAL_API_KEY"],
+                    "estimated_effort_days": 1,
+                    "poam_entry": {
+                        "milestone": "Setup API",
+                        "completion_date": "TBD",
+                        "responsible_party": "Admin",
+                        "resources": "API Key",
+                    },
+                    "overall_risk": "medium",
+                    "security_issues": [],
+                }
+            )
 
         m = model or self.model
         messages = [
@@ -83,7 +96,15 @@ class MistralComplianceAgent:
             )
             return response.choices[0].message.content
 
-    async def record_run(self, db: AsyncSession, trigger: str, scope: str, controls: List[str], findings: Dict[str, Any], status: str = "completed"):
+    async def record_run(
+        self,
+        db: AsyncSession,
+        trigger: str,
+        scope: str,
+        controls: List[str],
+        findings: Dict[str, Any],
+        status: str = "completed",
+    ):
         record = AgentRunRecord(
             id=str(uuid.uuid4()),
             agent_type="mistral",
@@ -94,7 +115,7 @@ class MistralComplianceAgent:
             status=status,
             mistral_model=self.model,
             created_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC)
+            completed_at=datetime.now(UTC),
         )
         db.add(record)
         await db.commit()
@@ -250,7 +271,7 @@ class MistralComplianceAgent:
 
 
 # ─── FastAPI router for Mistral agent endpoints ────────────────────────────────
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter()
 agent = MistralComplianceAgent()
@@ -281,11 +302,21 @@ async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_d
     """Use Mistral to analyze a compliance gap and return remediation steps."""
     try:
         result = await agent.analyze_gap(
-            req.control_id, req.control_title, req.control_description,
-            req.zt_pillar, req.current_status, req.existing_evidence
+            req.control_id,
+            req.control_title,
+            req.control_description,
+            req.zt_pillar,
+            req.current_status,
+            req.existing_evidence,
         )
-        await agent.record_run(db, "manual", f"Gap Analysis: {req.control_id}", [req.control_id], result)
-        return {"control_id": req.control_id, "analysis": result, "model": MISTRAL_MODEL}
+        await agent.record_run(
+            db, "manual", f"Gap Analysis: {req.control_id}", [req.control_id], result
+        )
+        return {
+            "control_id": req.control_id,
+            "analysis": result,
+            "model": MISTRAL_MODEL,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -297,7 +328,9 @@ async def code_review(req: CodeReviewRequest, db: AsyncSession = Depends(get_db)
         result = await agent.analyze_code_security(
             req.code_snippet, req.language, req.relevant_controls
         )
-        await agent.record_run(db, "manual", "Code Review", req.relevant_controls or [], result)
+        await agent.record_run(
+            db, "manual", "Code Review", req.relevant_controls or [], result
+        )
         return {"analysis": result, "model": MISTRAL_CODE_MODEL}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

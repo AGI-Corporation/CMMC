@@ -7,21 +7,21 @@ The /mcp endpoint exposes all CMMC tools to AI agents via the
 Model Context Protocol (MCP).
 """
 
+import json
+import os
+from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_mcp import FastApiMCP
-from contextlib import asynccontextmanager
-import json
-import os
 
-from backend.routers import controls, assessment, evidence, reports
-from agents.orchestrator import agent as orchestrator
-from agents.icam_agent import agent as icam
 from agents.devsecops_agent import agent as devsecops
+from agents.icam_agent import agent as icam
 from agents.mistral_agent import agent as mistral
-
+from agents.orchestrator import agent as orchestrator
 from backend.db.database import init_db
-from dotenv import load_dotenv
+from backend.routers import assessment, controls, evidence, reports
 
 load_dotenv()
 
@@ -48,7 +48,9 @@ app = FastAPI(
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 
-cors_origins = json.loads(os.getenv("CORS_ORIGINS", '["http://localhost:3000", "http://localhost:5173"]'))
+cors_origins = json.loads(
+    os.getenv("CORS_ORIGINS", '["http://localhost:3000", "http://localhost:5173"]')
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -67,13 +69,18 @@ app.include_router(evidence.router, prefix="/api/evidence", tags=["Evidence"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 
 # Agent Routers
-app.include_router(orchestrator.router, prefix="/api/orchestrator", tags=["Orchestrator"])
+app.include_router(
+    orchestrator.router, prefix="/api/orchestrator", tags=["Orchestrator"]
+)
 app.include_router(icam.router, prefix="/api/agents/icam", tags=["ICAM Agent"])
-app.include_router(devsecops.router, prefix="/api/agents/devsecops", tags=["DevSecOps Agent"])
+app.include_router(
+    devsecops.router, prefix="/api/agents/devsecops", tags=["DevSecOps Agent"]
+)
 app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
+
 
 @app.get("/", tags=["Health"])
 async def root():
