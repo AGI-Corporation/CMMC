@@ -27,14 +27,7 @@ async def list_controls(
     status: Optional[ImplementationStatus] = Query(None, description="Filter by implementation status"),
     db: AsyncSession = Depends(get_db)
 ):
-    # Base query for controls
-    query = select(ControlRecord)
-    if level:
-        query = query.where(ControlRecord.level == level.value)
-    if domain:
-        query = query.where(ControlRecord.domain == domain.value)
-
-    # Efficiently get latest assessments for all relevant controls
+    # Subquery to find the latest assessment date for each control
     sub_q = (
         select(
             AssessmentRecord.control_id,
@@ -44,28 +37,34 @@ async def list_controls(
         .subquery()
     )
 
-    assessments_q = (
-        select(AssessmentRecord)
-        .join(
-            sub_q,
+    # Main query: Join ControlRecord with latest AssessmentRecord
+    query = (
+        select(ControlRecord, AssessmentRecord)
+        .outerjoin(sub_q, ControlRecord.id == sub_q.c.control_id)
+        .outerjoin(
+            AssessmentRecord,
             (AssessmentRecord.control_id == sub_q.c.control_id) &
             (AssessmentRecord.assessment_date == sub_q.c.max_date)
         )
     )
 
-    ctrl_result = await db.execute(query)
-    controls_data = ctrl_result.scalars().all()
+    # Apply filters at the database level
+    if level:
+        query = query.where(ControlRecord.level == level.value)
+    if domain:
+        query = query.where(ControlRecord.domain == domain.value)
+    if status:
+        if status == ImplementationStatus.NOT_STARTED:
+            query = query.where(AssessmentRecord.id == None)
+        else:
+            query = query.where(AssessmentRecord.status == status.value)
 
-    ass_result = await db.execute(assessments_q)
-    assessments_map = {a.control_id: a for a in ass_result.scalars().all()}
+    result = await db.execute(query)
+    rows = result.all()
 
     responses = []
-    for c in controls_data:
-        assessment = assessments_map.get(c.id)
+    for c, assessment in rows:
         impl_status = assessment.status if assessment else "not_started"
-
-        if status and impl_status != status.value:
-            continue
 
         responses.append(ControlResponse(
             control=Control(
