@@ -127,13 +127,13 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     pct = (implemented / total * 100) if total > 0 else 0
     
     if pct >= 100:
-        readiness = "Ready for Certification"
+        readiness = "🏆 Ready for Certification"
     elif pct >= 80:
-        readiness = "Near Compliant - Minor Gaps"
+        readiness = "🟢 Near Compliant - Minor Gaps"
     elif pct >= 60:
-        readiness = "In Progress - Significant Gaps"
+        readiness = "🟡 In Progress - Significant Gaps"
     else:
-        readiness = "Early Stage - Major Remediation Needed"
+        readiness = "⚠️ Early Stage - Major Remediation Needed"
 
     return DashboardSummary(
         total_controls=total,
