@@ -19,6 +19,7 @@ from agents.orchestrator import agent as orchestrator
 from agents.icam_agent import agent as icam
 from agents.devsecops_agent import agent as devsecops
 from agents.mistral_agent import agent as mistral
+from agents.voice_agent import agent as voice
 
 from backend.db.database import init_db
 from dotenv import load_dotenv
@@ -71,6 +72,7 @@ app.include_router(orchestrator.router, prefix="/api/orchestrator", tags=["Orche
 app.include_router(icam.router, prefix="/api/agents/icam", tags=["ICAM Agent"])
 app.include_router(devsecops.router, prefix="/api/agents/devsecops", tags=["DevSecOps Agent"])
 app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
+app.include_router(voice.router, prefix="/api/agents/voice", tags=["Voice Agent"])
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
