@@ -27,6 +27,7 @@ class AgentType(str, Enum):
     GOVERNANCE = "governance"          # Policy/risk/POA&M
     OPS = "operations"                 # IR/SIEM/SOAR
     MISTRAL = "mistral"                # AI analysis engine
+    VOICE = "voice"                    # Voice-enabled advisor
 
 
 class TaskTrigger(str, Enum):
