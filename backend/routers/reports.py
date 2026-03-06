@@ -5,17 +5,16 @@ AGI Corporation 2026
 Generates System Security Plans (SSP) and Plans of Action & Milestones (POA&M)
 from the current assessment state. Output formats: Markdown, JSON, CSV.
 """
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from typing import List, Dict, Any
 from datetime import datetime, date, UTC
 import csv
 import io
-import json
 
-from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord
+from backend.db.database import get_db, AssessmentRecord, ControlRecord
 
 router = APIRouter()
 
@@ -36,6 +35,7 @@ DOMAIN_NAMES = {
     "SI": "System and Information Integrity",
 }
 
+
 def get_status_visual(status: str) -> str:
     """Returns an emoji and label for the status."""
     mapping = {
@@ -48,34 +48,34 @@ def get_status_visual(status: str) -> str:
     }
     return mapping.get(status, f"❓ {status}")
 
+
 def get_confidence_stars(confidence: float) -> str:
     """Returns a star rating for confidence."""
     stars = int(round(confidence * 5))
     return "⭐" * stars + "☆" * (5 - stars)
+
 
 async def get_latest_assessments(db: AsyncSession):
     # Subquery for latest assessment date per control_id
     subquery = (
         select(
             AssessmentRecord.control_id,
-            func.max(AssessmentRecord.assessment_date).label("max_date")
+            func.max(AssessmentRecord.assessment_date).label("max_date"),
         )
         .group_by(AssessmentRecord.control_id)
         .subquery()
     )
 
     # Join with the original table to get full records
-    query = (
-        select(AssessmentRecord)
-        .join(
-            subquery,
-            (AssessmentRecord.control_id == subquery.c.control_id) &
-            (AssessmentRecord.assessment_date == subquery.c.max_date)
-        )
+    query = select(AssessmentRecord).join(
+        subquery,
+        (AssessmentRecord.control_id == subquery.c.control_id)
+        & (AssessmentRecord.assessment_date == subquery.c.max_date),
     )
 
     result = await db.execute(query)
     return result.scalars().all()
+
 
 @router.get("/ssp", summary="Generate System Security Plan (SSP) in Markdown")
 async def generate_ssp(
@@ -93,19 +93,31 @@ async def generate_ssp(
     controls = {c.id: c for c in controls_result.scalars().all()}
 
     # Count by status
-    status_counts = {"implemented": 0, "partial": 0, "planned": 0, "not_implemented": 0, "na": 0}
+    status_counts = {
+        "implemented": 0,
+        "partial": 0,
+        "planned": 0,
+        "not_implemented": 0,
+        "na": 0,
+    }
     for a in assessments:
         if a.status in status_counts:
             status_counts[a.status] += 1
         elif a.status == "partially_implemented":
-             status_counts["partial"] += 1
+            status_counts["partial"] += 1
 
-    sprs_estimate = 110 - (status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5)
+    sprs_estimate = 110 - (
+        status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5
+    )
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
     total_controls_count = len(controls)
-    implemented_count = status_counts['implemented']
-    pct = (implemented_count / total_controls_count * 100) if total_controls_count > 0 else 0
+    implemented_count = status_counts["implemented"]
+    pct = (
+        (implemented_count / total_controls_count * 100)
+        if total_controls_count > 0
+        else 0
+    )
 
     if pct >= 100:
         readiness_label = "🏆 Ready for Certification"
@@ -141,7 +153,7 @@ async def generate_ssp(
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
-**Classification:** {classification}  
+**Classification:** {classification}
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
 **Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
 **Overall Readiness:** {readiness_label}
@@ -186,7 +198,8 @@ async def generate_ssp(
     findings_by_domain = {}
     for a in assessments:
         ctrl = controls.get(a.control_id)
-        if not ctrl: continue
+        if not ctrl:
+            continue
         domain = ctrl.domain
         if domain not in findings_by_domain:
             findings_by_domain[domain] = []
@@ -200,7 +213,9 @@ async def generate_ssp(
         ssp += f"### {domain_code} - {domain_name}\n\n"
 
         # Sort assessments by control ID
-        domain_assessments = sorted(findings_by_domain[domain_code], key=lambda x: x.control_id)
+        domain_assessments = sorted(
+            findings_by_domain[domain_code], key=lambda x: x.control_id
+        )
 
         for a in domain_assessments:
             ctrl = controls.get(a.control_id)
@@ -212,7 +227,9 @@ async def generate_ssp(
             ssp += f"- **Status:** {status_visual}\n"
             ssp += f"- **Confidence:** {confidence_visual} ({a.confidence:.0%})\n"
             ssp += f"- **Notes:** {a.notes or 'None'}\n"
-            ssp += f"- **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}\n\n"
+            ssp += (
+                f"- **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}\n\n"
+            )
 
     ssp += """
 ## 4. Next Steps
@@ -243,35 +260,54 @@ async def generate_poam(
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow([
-        "Control ID", "Domain", "Title", "ZT Pillar", "Status",
-        "Confidence", "Milestone", "Target Date", "Responsible Party",
-        "Resources Required", "Notes"
-    ])
+    writer.writerow(
+        [
+            "Control ID",
+            "Domain",
+            "Title",
+            "ZT Pillar",
+            "Status",
+            "Confidence",
+            "Milestone",
+            "Target Date",
+            "Responsible Party",
+            "Resources Required",
+            "Notes",
+        ]
+    )
 
     for a in assessments:
-        if a.status in ["not_implemented", "partial", "planned", "partially_implemented"]:
+        if a.status in [
+            "not_implemented",
+            "partial",
+            "planned",
+            "partially_implemented",
+        ]:
             ctrl = controls.get(a.control_id)
             domain = a.control_id.split(".")[0] if "." in a.control_id else ""
-            writer.writerow([
-                a.control_id,
-                domain,
-                ctrl.title if ctrl else "",
-                ctrl.zt_pillar if ctrl else "",
-                a.status,
-                f"{a.confidence:.0%}",
-                f"Implement {a.control_id}",
-                a.next_review.strftime("%Y-%m-%d") if a.next_review else "TBD",
-                a.assessor or "ISSO",
-                "TBD",
-                a.notes or "",
-            ])
+            writer.writerow(
+                [
+                    a.control_id,
+                    domain,
+                    ctrl.title if ctrl else "",
+                    ctrl.zt_pillar if ctrl else "",
+                    a.status,
+                    f"{a.confidence:.0%}",
+                    f"Implement {a.control_id}",
+                    a.next_review.strftime("%Y-%m-%d") if a.next_review else "TBD",
+                    a.assessor or "ISSO",
+                    "TBD",
+                    a.notes or "",
+                ]
+            )
 
     csv_content = output.getvalue()
     return PlainTextResponse(
         content=csv_content,
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="poam_{system_name.replace(" ","_")}.csv"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="poam_{system_name.replace(" ","_")}.csv"'
+        },
     )
 
 
@@ -282,17 +318,28 @@ async def get_dashboard(
     """Return compliance posture summary for dashboard rendering."""
     assessments = await get_latest_assessments(db)
 
-    status_counts = {"implemented": 0, "partial": 0, "planned": 0, "not_implemented": 0, "na": 0}
+    status_counts = {
+        "implemented": 0,
+        "partial": 0,
+        "planned": 0,
+        "not_implemented": 0,
+        "na": 0,
+    }
 
     for a in assessments:
         if a.status in status_counts:
             status_counts[a.status] += 1
         elif a.status == "partially_implemented":
-             status_counts["partial"] += 1
+            status_counts["partial"] += 1
 
     total_assessed = len(assessments)
     implemented = status_counts["implemented"]
-    sprs_score = max(-203, round(110 - (status_counts["not_implemented"] + status_counts["partial"] * 0.5)))
+    sprs_score = max(
+        -203,
+        round(
+            110 - (status_counts["not_implemented"] + status_counts["partial"] * 0.5)
+        ),
+    )
 
     # Get total controls count for accurate percentage
     controls_result = await db.execute(select(func.count(ControlRecord.id)))
@@ -305,7 +352,9 @@ async def get_dashboard(
         "total_controls": total_controls,
         "assessed_controls": total_assessed,
         "status_breakdown": status_counts,
-        "overall_compliance_pct": round(implemented / total_controls * 100, 1) if total_controls else 0,
+        "overall_compliance_pct": (
+            round(implemented / total_controls * 100, 1) if total_controls else 0
+        ),
         "zt_pillars": [
             {"pillar": "User", "domains": ["AC", "IA", "PS"]},
             {"pillar": "Device", "domains": ["CM", "MA", "PE"]},
