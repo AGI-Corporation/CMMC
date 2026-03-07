@@ -7,7 +7,7 @@ The /mcp endpoint exposes all CMMC tools to AI agents via the
 Model Context Protocol (MCP).
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_mcp import FastApiMCP
 from contextlib import asynccontextmanager
@@ -57,6 +57,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """
+    Sentinel Security Enhancement: Add standard security headers for defense-in-depth.
+    - X-Frame-Options: Prevent clickjacking (DENY)
+    - X-Content-Type-Options: Prevent MIME-sniffing (nosniff)
+    - Referrer-Policy: Control referrer information (strict-origin-when-cross-origin)
+    - Content-Security-Policy: restrict framing (frame-ancestors 'none')
+    """
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+    return response
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
