@@ -6,7 +6,7 @@ import os
 import json
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select
+from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select, Index
 from datetime import datetime, UTC
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cmmc.db")
@@ -60,6 +60,9 @@ class EvidenceRecord(Base):
 
 class AssessmentRecord(Base):
     __tablename__ = "assessments"
+    __table_args__ = (
+        Index("idx_control_date", "control_id", "assessment_date"),
+    )
     id = Column(String, primary_key=True, index=True)
     system_name = Column(String)
     control_id = Column(String, index=True)
