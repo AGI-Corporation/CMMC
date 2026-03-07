@@ -19,6 +19,15 @@ from backend.db.database import get_db, AssessmentRecord, ControlRecord, Evidenc
 
 router = APIRouter()
 
+STATUS_EMOJIS = {
+    "implemented": "✅",
+    "partial": "🟡",
+    "planned": "📝",
+    "not_implemented": "🛑",
+    "na": "⚪",
+    "partially_implemented": "🟡"
+}
+
 async def get_latest_assessments(db: AsyncSession):
     # Subquery for latest assessment date per control_id
     subquery = (
@@ -88,11 +97,11 @@ async def generate_ssp(
 | Classification | {classification} |
 | Assessment Date | {date.today()} |
 | Total Controls | {len(controls)} |
-| Implemented | {status_counts['implemented']} |
-| Partial | {status_counts['partial']} |
-| Planned | {status_counts['planned']} |
-| Not Implemented | {status_counts['not_implemented']} |
-| N/A | {status_counts['na']} |
+| Implemented | {STATUS_EMOJIS['implemented']} {status_counts['implemented']} |
+| Partial | {STATUS_EMOJIS['partial']} {status_counts['partial']} |
+| Planned | {STATUS_EMOJIS['planned']} {status_counts['planned']} |
+| Not Implemented | {STATUS_EMOJIS['not_implemented']} {status_counts['not_implemented']} |
+| N/A | {STATUS_EMOJIS['na']} {status_counts['na']} |
 
 ## 2. Control Implementation Summary
 
@@ -115,8 +124,9 @@ async def generate_ssp(
     for a in assessments[:20]:  # Limit for readability
         ctrl = controls.get(a.control_id)
         ctrl_title = ctrl.title if ctrl else "Unknown"
+        status_emoji = STATUS_EMOJIS.get(a.status, "❓")
         ssp += f"""### {a.control_id} - {ctrl_title}
-- **Status:** {a.status}
+- **Status:** {status_emoji} {a.status}
 - **Confidence:** {a.confidence:.0%}
 - **Notes:** {a.notes or 'None'}
 - **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}
