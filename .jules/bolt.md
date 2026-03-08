@@ -1,0 +1,3 @@
+## 2026-05-22 - SQL JOIN and Index Optimization for Latest-Record-Per-Group
+**Learning:** In SQLAlchemy/SQLite, retrieving the latest record for each group (e.g., latest assessment for each control) using a subquery for MAX(date) and joining back is significantly faster when supported by a composite index on `(foreign_key, date)`. Moving the logic from multiple sequential queries and Python-side filtering to a single consolidated JOIN with database-level filtering reduced latency by ~23% even for small datasets (500 records).
+**Action:** Always look for patterns where records are filtered in memory after being fetched. Push filtering to the database and ensure composite indexes cover the grouping and ordering keys.

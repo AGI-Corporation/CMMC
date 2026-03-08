@@ -27,14 +27,7 @@ async def list_controls(
     status: Optional[ImplementationStatus] = Query(None, description="Filter by implementation status"),
     db: AsyncSession = Depends(get_db)
 ):
-    # Base query for controls
-    query = select(ControlRecord)
-    if level:
-        query = query.where(ControlRecord.level == level.value)
-    if domain:
-        query = query.where(ControlRecord.domain == domain.value)
-
-    # Efficiently get latest assessments for all relevant controls
+    # Subquery for latest assessment date per control_id
     sub_q = (
         select(
             AssessmentRecord.control_id,
@@ -44,28 +37,40 @@ async def list_controls(
         .subquery()
     )
 
-    assessments_q = (
-        select(AssessmentRecord)
-        .join(
+    # Combined query using a single JOIN to fetch controls and their latest assessment
+    # This avoids N+1 problems and multiple large queries
+    query = (
+        select(ControlRecord, AssessmentRecord)
+        .outerjoin(
             sub_q,
+            ControlRecord.id == sub_q.c.control_id
+        )
+        .outerjoin(
+            AssessmentRecord,
             (AssessmentRecord.control_id == sub_q.c.control_id) &
             (AssessmentRecord.assessment_date == sub_q.c.max_date)
         )
     )
 
-    ctrl_result = await db.execute(query)
-    controls_data = ctrl_result.scalars().all()
+    if level:
+        query = query.where(ControlRecord.level == level.value)
+    if domain:
+        query = query.where(ControlRecord.domain == domain.value)
 
-    ass_result = await db.execute(assessments_q)
-    assessments_map = {a.control_id: a for a in ass_result.scalars().all()}
+    # Apply implementation status filtering at the database level for better performance
+    if status:
+        if status.value == "not_started":
+            # "not_started" includes controls with no assessments OR explicit status
+            query = query.where((AssessmentRecord.id == None) | (AssessmentRecord.status == "not_started"))
+        else:
+            query = query.where(AssessmentRecord.status == status.value)
+
+    result = await db.execute(query)
+    rows = result.all()
 
     responses = []
-    for c in controls_data:
-        assessment = assessments_map.get(c.id)
+    for c, assessment in rows:
         impl_status = assessment.status if assessment else "not_started"
-
-        if status and impl_status != status.value:
-            continue
 
         responses.append(ControlResponse(
             control=Control(
