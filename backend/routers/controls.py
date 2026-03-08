@@ -5,7 +5,8 @@ These endpoints are automatically exposed as MCP tools via fastapi-mcp.
 from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
+from sqlalchemy.orm import aliased
 
 from backend.db.database import get_db, ControlRecord, AssessmentRecord
 from backend.models.control import (
@@ -27,15 +28,8 @@ async def list_controls(
     status: Optional[ImplementationStatus] = Query(None, description="Filter by implementation status"),
     db: AsyncSession = Depends(get_db)
 ):
-    # Base query for controls
-    query = select(ControlRecord)
-    if level:
-        query = query.where(ControlRecord.level == level.value)
-    if domain:
-        query = query.where(ControlRecord.domain == domain.value)
-
-    # Efficiently get latest assessments for all relevant controls
-    sub_q = (
+    # Subquery for latest assessment date per control_id
+    latest_assessment_subq = (
         select(
             AssessmentRecord.control_id,
             func.max(AssessmentRecord.assessment_date).label("max_date")
@@ -44,38 +38,52 @@ async def list_controls(
         .subquery()
     )
 
-    assessments_q = (
-        select(AssessmentRecord)
-        .join(
-            sub_q,
-            (AssessmentRecord.control_id == sub_q.c.control_id) &
-            (AssessmentRecord.assessment_date == sub_q.c.max_date)
+    # Alias for AssessmentRecord to join with subquery
+    la = aliased(AssessmentRecord)
+
+    # Base query joining ControlRecord with the latest AssessmentRecord
+    query = (
+        select(ControlRecord, la)
+        .outerjoin(
+            latest_assessment_subq,
+            ControlRecord.id == latest_assessment_subq.c.control_id
+        )
+        .outerjoin(
+            la,
+            (la.control_id == latest_assessment_subq.c.control_id) &
+            (la.assessment_date == latest_assessment_subq.c.max_date)
         )
     )
 
-    ctrl_result = await db.execute(query)
-    controls_data = ctrl_result.scalars().all()
+    # Apply filters in SQL
+    if level:
+        query = query.where(ControlRecord.level == level.value)
+    if domain:
+        query = query.where(ControlRecord.domain == domain.value)
 
-    ass_result = await db.execute(assessments_q)
-    assessments_map = {a.control_id: a for a in ass_result.scalars().all()}
+    if status:
+        if status == ImplementationStatus.NOT_STARTED:
+            # Handle 'not_started' as either null or explicitly 'not_started'
+            query = query.where(or_(la.status == None, la.status == status.value))
+        else:
+            query = query.where(la.status == status.value)
+
+    result = await db.execute(query)
+    rows = result.all()
 
     responses = []
-    for c in controls_data:
-        assessment = assessments_map.get(c.id)
+    for ctrl, assessment in rows:
         impl_status = assessment.status if assessment else "not_started"
-
-        if status and impl_status != status.value:
-            continue
 
         responses.append(ControlResponse(
             control=Control(
-                id=c.id,
-                title=c.title,
-                description=c.description,
-                domain=c.domain,
-                level=c.level,
-                nist_mapping=c.nist_mapping,
-                weight=c.score_value
+                id=ctrl.id,
+                title=ctrl.title,
+                description=ctrl.description,
+                domain=ctrl.domain,
+                level=ctrl.level,
+                nist_mapping=ctrl.nist_mapping,
+                weight=ctrl.score_value
             ),
             implementation_status=impl_status,
             evidence_count=len(assessment.evidence_ids) if assessment and isinstance(assessment.evidence_ids, list) else 0,
@@ -84,7 +92,12 @@ async def list_controls(
             poam_required=(assessment.poam_required == "true") if assessment else False
         ))
 
-    return ControlListResponse(controls=responses, total=len(responses), level_filter=level, domain_filter=domain)
+    return ControlListResponse(
+        controls=responses,
+        total=len(responses),
+        level_filter=level,
+        domain_filter=domain
+    )
 
 
 @router.get(
