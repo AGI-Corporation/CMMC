@@ -21,6 +21,8 @@ router = APIRouter()
 
 def get_status_emoji(status: str) -> str:
     """Map implementation status to a visual emoji."""
+    if not status:
+        return "⚪"
     mapping = {
         "implemented": "✅",
         "partial": "🟡",
