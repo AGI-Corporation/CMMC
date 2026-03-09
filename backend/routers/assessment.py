@@ -11,7 +11,7 @@ from datetime import datetime, UTC
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from backend.db.database import get_db, ControlRecord, AssessmentRecord, AgentRunRecord
+from backend.db.database import get_db, ControlRecord, AssessmentRecord, AgentRunRecord, get_latest_assessments
 
 router = APIRouter()
 
@@ -55,26 +55,6 @@ class SPRSResult(BaseModel):
     certification_level: str
     assessment_date: str
 
-async def get_latest_assessments(db: AsyncSession):
-    sub_q = (
-        select(
-            AssessmentRecord.control_id,
-            func.max(AssessmentRecord.assessment_date).label("max_date")
-        )
-        .group_by(AssessmentRecord.control_id)
-        .subquery()
-    )
-    query = (
-        select(AssessmentRecord)
-        .join(
-            sub_q,
-            (AssessmentRecord.control_id == sub_q.c.control_id) &
-            (AssessmentRecord.assessment_date == sub_q.c.max_date)
-        )
-    )
-    result = await db.execute(query)
-    return {a.control_id: a for a in result.scalars().all()}
-
 @router.get(
     "/dashboard",
     response_model=DashboardSummary,
@@ -85,7 +65,8 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ControlRecord))
     controls = result.scalars().all()
 
-    assessments_map = await get_latest_assessments(db)
+    latest_assessments = await get_latest_assessments(db)
+    assessments_map = {a.control_id: a for a in latest_assessments}
     
     by_domain = {}
     by_level = {"Level 1": {"total": 0, "implemented": 0}, "Level 2": {"total": 0, "implemented": 0}, "Level 3": {"total": 0, "implemented": 0}}
@@ -160,7 +141,8 @@ async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ControlRecord))
     controls = result.scalars().all()
 
-    assessments_map = await get_latest_assessments(db)
+    latest_assessments = await get_latest_assessments(db)
+    assessments_map = {a.control_id: a for a in latest_assessments}
 
     sprs = 110
     deductions_list = []
