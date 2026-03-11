@@ -52,8 +52,8 @@ class Control(BaseModel):
     weight: int = Field(default=1, description="SPRS point weight (deducted if not implemented)")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "id": "AC.1.001",
                 "title": "Limit system access to authorized users",

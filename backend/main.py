@@ -101,7 +101,7 @@ mcp = FastApiMCP(
     description="MCP server for CMMC 2.0 compliance automation. Provides tools for control lookup, evidence collection, assessment scoring, SPRS calculation, and SSP/POAM generation.",
 )
 
-mcp.mount()
+mcp.mount_http()
 
 # ─── MCP endpoint is now available at /mcp ─────────────────────────────────────
 # Add to claude_desktop_config.json:
