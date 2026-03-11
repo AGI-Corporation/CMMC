@@ -20,13 +20,13 @@ class EvidenceType(str, Enum):
 
 
 class EvidenceBase(BaseModel):
-    control_id: str = Field(..., example="AC.1.001")
-    zt_pillar: str = Field(..., example="User")
-    zt_capability_id: Optional[str] = Field(None, example="ZT-1.1")
+    control_id: str = Field(..., json_schema_extra={"example": "AC.1.001"})
+    zt_pillar: str = Field(..., json_schema_extra={"example": "User"})
+    zt_capability_id: Optional[str] = Field(None, json_schema_extra={"example": "ZT-1.1"})
     evidence_type: EvidenceType
     title: str
     description: str
-    source_system: str = Field(..., example="Okta / GitHub Actions")
+    source_system: str = Field(..., json_schema_extra={"example": "Okta / GitHub Actions"})
     uri: Optional[str] = None
     reviewer: Optional[str] = None
     review_cycle_days: int = 365
@@ -41,8 +41,9 @@ class EvidenceResponse(EvidenceBase):
     id: str
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True
+    }
 
 
 class EvidenceListResponse(BaseModel):
