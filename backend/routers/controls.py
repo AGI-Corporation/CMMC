@@ -7,7 +7,7 @@ from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from backend.db.database import get_db, ControlRecord, AssessmentRecord
+from backend.db.database import get_db, ControlRecord, AssessmentRecord, get_latest_assessments
 from backend.models.control import (
     Control, ControlResponse, ControlListResponse,
     ControlUpdate, CMMCLevel, ControlDomain, ImplementationStatus
@@ -34,30 +34,10 @@ async def list_controls(
     if domain:
         query = query.where(ControlRecord.domain == domain.value)
 
-    # Efficiently get latest assessments for all relevant controls
-    sub_q = (
-        select(
-            AssessmentRecord.control_id,
-            func.max(AssessmentRecord.assessment_date).label("max_date")
-        )
-        .group_by(AssessmentRecord.control_id)
-        .subquery()
-    )
-
-    assessments_q = (
-        select(AssessmentRecord)
-        .join(
-            sub_q,
-            (AssessmentRecord.control_id == sub_q.c.control_id) &
-            (AssessmentRecord.assessment_date == sub_q.c.max_date)
-        )
-    )
-
+    # Bolt ⚡: Optimized using centralized helper with composite index
     ctrl_result = await db.execute(query)
     controls_data = ctrl_result.scalars().all()
-
-    ass_result = await db.execute(assessments_q)
-    assessments_map = {a.control_id: a for a in ass_result.scalars().all()}
+    assessments_map = await get_latest_assessments(db)
 
     responses = []
     for c in controls_data:
