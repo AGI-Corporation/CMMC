@@ -5,7 +5,7 @@ These endpoints are automatically exposed as MCP tools via fastapi-mcp.
 from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from backend.db.database import get_db, ControlRecord, AssessmentRecord, get_latest_assessments
 from backend.models.control import (
