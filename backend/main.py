@@ -15,7 +15,6 @@ import json
 import os
 
 from backend.routers import controls, assessment, evidence, reports
-from backend.middleware.security import SecurityHeadersMiddleware
 from agents.orchestrator import agent as orchestrator
 from agents.icam_agent import agent as icam
 from agents.devsecops_agent import agent as devsecops
@@ -58,8 +57,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.add_middleware(SecurityHeadersMiddleware)
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
