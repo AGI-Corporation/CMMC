@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from backend.db.database import get_db, ControlRecord, AssessmentRecord, AgentRunRecord
+from backend.models.control import ImplementationStatus
 
 router = APIRouter()
 
@@ -212,20 +213,31 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
     findings = run.findings
     promoted_count = 0
 
+    # Valid status values for validation
+    valid_statuses = [s.value for s in ImplementationStatus] + ["partial", "na"]
+
     # Logic for ICAM promotion
     if run.agent_type == "icam":
         results = findings.get("results", [])
         for res in results:
+            # Validate status and confidence from agent findings
+            status = res.get("status", "not_started")
+            if status not in valid_statuses:
+                status = "not_started"
+
+            conf = float(res.get("confidence", 0.0))
+            conf = max(0.0, min(1.0, conf))
+
             new_ass = AssessmentRecord(
                 id=str(uuid.uuid4()),
                 control_id=res["control_id"],
-                status=res["status"],
-                confidence=res["confidence"],
-                notes=f"Promoted from {run.agent_type} agent run {run_id}. Findings: {', '.join(res['findings'])}",
-                evidence_ids=[res["evidence_id"]],
+                status=status,
+                confidence=conf,
+                notes=f"Promoted from {run.agent_type} agent run {run_id}. Findings: {', '.join(res.get('findings', []))}",
+                evidence_ids=[res.get("evidence_id")] if res.get("evidence_id") else [],
                 assessor=f"Agent: {run.agent_type}",
                 assessment_date=datetime.now(UTC),
-                poam_required="true" if res["status"] in ["partial", "not_implemented", "partially_implemented"] else "false"
+                poam_required="true" if status in ["partial", "not_implemented", "partially_implemented"] else "false"
             )
             db.add(new_ass)
             promoted_count += 1
@@ -235,8 +247,14 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
         # DSO provides overall confidence and detailed scan results
         # We'll map to specific controls it evaluated
         controls = run.controls_evaluated
-        overall_conf = findings.get("overall_confidence", 0.0)
+
+        # Validate confidence and status
+        overall_conf = float(findings.get("overall_confidence", 0.0))
+        overall_conf = max(0.0, min(1.0, overall_conf))
+
         status = findings.get("status", "partially_implemented")
+        if status not in valid_statuses:
+            status = "partially_implemented"
 
         for cid in controls:
             new_ass = AssessmentRecord(
@@ -245,7 +263,7 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
                 status=status,
                 confidence=overall_conf,
                 notes=f"Promoted from {run.agent_type} agent run {run_id} for service {findings.get('service')}.",
-                evidence_ids=[findings.get("image_scan", {}).get("evidence_id")],
+                evidence_ids=[findings.get("image_scan", {}).get("evidence_id")] if findings.get("image_scan", {}).get("evidence_id") else [],
                 assessor=f"Agent: {run.agent_type}",
                 assessment_date=datetime.now(UTC),
                 poam_required="true" if status in ["partial", "not_implemented", "partially_implemented"] else "false"
