@@ -1,0 +1,3 @@
+## 2025-05-15 - [Database] Optimized "Latest Assessment" Retrieval
+**Learning:** The 'latest per group' query pattern was duplicated across multiple routers (controls, assessment, reports) and lacked indexing on the filter/sort columns. In SQLite (and other DBs), fetching the max date per ID without a composite index forces a full table scan for the subquery.
+**Action:** Centralized the logic into `get_latest_assessments` in `backend/db/database.py` and added a composite index `Index("idx_control_date", "control_id", "assessment_date")` on `AssessmentRecord`. This ensures O(log n) lookups for the latest assessment per control, making the Dashboard and Control List endpoints significantly more efficient as the assessment history grows.
