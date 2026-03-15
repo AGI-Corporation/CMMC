@@ -42,10 +42,11 @@ class ImplementationStatus(str, Enum):
 class Control(BaseModel):
     """CMMC Control - aligned with OSCAL catalog model."""
     id: str = Field(..., description="Control ID (e.g., AC.1.001)")
+    framework: str = Field(default="CMMC", description="Compliance framework (CMMC, NIST, HIPAA, FHIR)")
     title: str = Field(..., description="Control title")
     description: str = Field(..., description="Control description / requirement")
-    domain: ControlDomain = Field(..., description="Control domain / family")
-    level: CMMCLevel = Field(..., description="Minimum CMMC level requiring this control")
+    domain: str = Field(..., description="Control domain / family")
+    level: str = Field(..., description="Minimum compliance level requiring this control")
     nist_mapping: Optional[str] = Field(None, description="Mapped NIST SP 800-171 control ID")
     discussion: Optional[str] = Field(None, description="CMMC discussion / implementation guidance")
     assessment_objectives: Optional[List[str]] = Field(default_factory=list, description="Assessment objectives")

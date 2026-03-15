@@ -104,3 +104,13 @@ async def test_update_with_advanced_fields():
         assert data["confidence"] == 0.95
         assert data["evidence_count"] == 1
         assert data["poam_required"] == False
+
+@pytest.mark.anyio
+async def test_simulation_state():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/api/simulation/state")
+    assert response.status_code == 200
+    data = response.json()
+    assert "nodes" in data
+    assert "edges" in data
+    assert len(data["nodes"]) > 0

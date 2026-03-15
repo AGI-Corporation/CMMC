@@ -15,6 +15,27 @@ from backend.models.control import (
 
 router = APIRouter()
 
+def map_control_to_response(c, assessment):
+    """Helper to map a ControlRecord and AssessmentRecord to a ControlResponse."""
+    impl_status = assessment.status if assessment else "not_started"
+    return ControlResponse(
+        control=Control(
+            id=c.id,
+            framework=c.framework,
+            title=c.title,
+            description=c.description,
+            domain=c.domain,
+            level=c.level,
+            nist_mapping=c.nist_mapping,
+            weight=c.score_value
+        ),
+        implementation_status=impl_status,
+        evidence_count=len(assessment.evidence_ids) if assessment and isinstance(assessment.evidence_ids, list) else 0,
+        notes=assessment.notes if assessment else None,
+        confidence=assessment.confidence if assessment else 0.0,
+        poam_required=(assessment.poam_required == "true") if assessment else False
+    )
+
 @router.get(
     "/",
     response_model=ControlListResponse,
@@ -22,17 +43,20 @@ router = APIRouter()
     description="List all CMMC controls, optionally filtered by level or domain. Returns controls with current implementation status."
 )
 async def list_controls(
-    level: Optional[CMMCLevel] = Query(None, description="Filter by CMMC level (Level 1, Level 2, Level 3)"),
-    domain: Optional[ControlDomain] = Query(None, description="Filter by control domain (AC, AU, CM, etc.)"),
+    framework: Optional[str] = Query("CMMC", description="Filter by framework (CMMC, NIST, HIPAA, FHIR)"),
+    level: Optional[CMMCLevel] = Query(None, description="Filter by level"),
+    domain: Optional[str] = Query(None, description="Filter by control domain"),
     status: Optional[ImplementationStatus] = Query(None, description="Filter by implementation status"),
     db: AsyncSession = Depends(get_db)
 ):
     # Base query for controls
     query = select(ControlRecord)
+    if framework:
+        query = query.where(ControlRecord.framework == framework)
     if level:
         query = query.where(ControlRecord.level == level.value)
     if domain:
-        query = query.where(ControlRecord.domain == domain.value)
+        query = query.where(ControlRecord.domain == domain)
 
     # Efficiently get latest assessments for all relevant controls
     sub_q = (
@@ -62,27 +86,12 @@ async def list_controls(
     responses = []
     for c in controls_data:
         assessment = assessments_map.get(c.id)
-        impl_status = assessment.status if assessment else "not_started"
+        response = map_control_to_response(c, assessment)
 
-        if status and impl_status != status.value:
+        if status and response.implementation_status != status.value:
             continue
 
-        responses.append(ControlResponse(
-            control=Control(
-                id=c.id,
-                title=c.title,
-                description=c.description,
-                domain=c.domain,
-                level=c.level,
-                nist_mapping=c.nist_mapping,
-                weight=c.score_value
-            ),
-            implementation_status=impl_status,
-            evidence_count=len(assessment.evidence_ids) if assessment and isinstance(assessment.evidence_ids, list) else 0,
-            notes=assessment.notes if assessment else None,
-            confidence=assessment.confidence if assessment else 0.0,
-            poam_required=(assessment.poam_required == "true") if assessment else False
-        ))
+        responses.append(response)
 
     return ControlListResponse(controls=responses, total=len(responses), level_filter=level, domain_filter=domain)
 
@@ -105,22 +114,7 @@ async def get_control_detail(control_id: str, db: AsyncSession = Depends(get_db)
     a_result = await db.execute(a_query)
     assessment = a_result.scalars().first()
 
-    return ControlResponse(
-        control=Control(
-            id=c.id,
-            title=c.title,
-            description=c.description,
-            domain=c.domain,
-            level=c.level,
-            nist_mapping=c.nist_mapping,
-            weight=c.score_value
-        ),
-        implementation_status=assessment.status if assessment else "not_started",
-        evidence_count=len(assessment.evidence_ids) if assessment and isinstance(assessment.evidence_ids, list) else 0,
-        notes=assessment.notes if assessment else None,
-        confidence=assessment.confidence if assessment else 0.0,
-        poam_required=(assessment.poam_required == "true") if assessment else False
-    )
+    return map_control_to_response(c, assessment)
 
 
 @router.patch(
@@ -158,6 +152,7 @@ async def update_control_status(control_id: str, update: ControlUpdate, db: Asyn
     return ControlResponse(
         control=Control(
             id=c.id,
+            framework=c.framework,
             title=c.title,
             description=c.description,
             domain=c.domain,

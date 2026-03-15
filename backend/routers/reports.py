@@ -15,47 +15,27 @@ import csv
 import io
 import json
 
-from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord
+from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord, get_latest_assessments
+from agents.mistral_agent.agent import agent as mistral_agent
 
 router = APIRouter()
 
-async def get_latest_assessments(db: AsyncSession):
-    # Subquery for latest assessment date per control_id
-    subquery = (
-        select(
-            AssessmentRecord.control_id,
-            func.max(AssessmentRecord.assessment_date).label("max_date")
-        )
-        .group_by(AssessmentRecord.control_id)
-        .subquery()
-    )
-
-    # Join with the original table to get full records
-    query = (
-        select(AssessmentRecord)
-        .join(
-            subquery,
-            (AssessmentRecord.control_id == subquery.c.control_id) &
-            (AssessmentRecord.assessment_date == subquery.c.max_date)
-        )
-    )
-
-    result = await db.execute(query)
-    return result.scalars().all()
 
 @router.get("/ssp", summary="Generate System Security Plan (SSP) in Markdown")
 async def generate_ssp(
-    system_name: str = "AGI Corp CMMC System",
+    system_name: str = "AGI Corp Compliance System",
     classification: str = "CUI",
+    framework: str = "CMMC",
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Generate a NIST SP 800-171 / CMMC 2.0 SSP in Markdown format.
+    Generate a framework-specific SSP in Markdown format.
     Includes: system overview, control family summaries, implementation status.
     """
     # Fetch latest assessments
-    assessments = await get_latest_assessments(db)
-    controls_result = await db.execute(select(ControlRecord))
+    assessments_map = await get_latest_assessments(db)
+    assessments = [a for a in assessments_map.values() if a.framework == framework]
+    controls_result = await db.execute(select(ControlRecord).where(ControlRecord.framework == framework))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
     # Count by status
@@ -69,12 +49,18 @@ async def generate_ssp(
     sprs_estimate = 110 - (status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5)
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
+    # Generate AI Narrative
+    ai_narrative = await mistral_agent.generate_sprs_narrative(
+        score=sprs_estimate,
+        domain_breakdown=status_counts
+    )
+
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
 **Classification:** {classification}  
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
-**Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
+**Framework:** {framework}
 **SPRS Score Estimate:** {sprs_estimate}  
 
 ---
@@ -108,7 +94,11 @@ async def generate_ssp(
 | Visibility & Analytics | AU, IR, RA | See assessment |
 | Automation & Orchestration | IR, SI, CA | See assessment |
 
-## 3. Assessment Findings
+## 3. Executive Assessment Summary (AI-Generated)
+
+{ai_narrative}
+
+## 4. Assessment Findings
 
 """
 
@@ -124,7 +114,7 @@ async def generate_ssp(
 """
 
     ssp += """
-## 4. Next Steps
+## 5. Next Steps
 
 1. Complete POA&M for all not_implemented controls
 2. Collect evidence for partial controls
@@ -139,15 +129,17 @@ async def generate_ssp(
 
 @router.get("/poam", summary="Generate POA&M CSV for unimplemented controls")
 async def generate_poam(
-    system_name: str = "AGI Corp CMMC System",
+    system_name: str = "AGI Corp Compliance System",
+    framework: str = "CMMC",
     db: AsyncSession = Depends(get_db),
 ):
     """
     Generate a Plan of Action & Milestones (POA&M) as CSV.
     Includes all partial and not_implemented controls.
     """
-    assessments = await get_latest_assessments(db)
-    controls_result = await db.execute(select(ControlRecord))
+    assessments_map = await get_latest_assessments(db)
+    assessments = [a for a in assessments_map.values() if a.framework == framework]
+    controls_result = await db.execute(select(ControlRecord).where(ControlRecord.framework == framework))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
     output = io.StringIO()
@@ -189,7 +181,8 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Return compliance posture summary for dashboard rendering."""
-    assessments = await get_latest_assessments(db)
+    assessments_map = await get_latest_assessments(db)
+    assessments = list(assessments_map.values())
 
     status_counts = {"implemented": 0, "partial": 0, "planned": 0, "not_implemented": 0, "na": 0}
 

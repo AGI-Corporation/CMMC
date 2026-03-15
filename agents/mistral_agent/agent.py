@@ -12,9 +12,10 @@ import uuid
 from datetime import datetime, UTC
 from typing import Optional, List, Dict, Any
 from mistralai import Mistral
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from enum import Enum
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import AgentRunRecord, get_db
+from backend.db.database import AgentRunRecord, get_db, generate_fingerprint
 
 # ─── Mistral Configuration ─────────────────────────────────────────────────────
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
@@ -22,6 +23,39 @@ MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
 MISTRAL_CODE_MODEL = os.getenv("MISTRAL_CODE_MODEL", "codestral-latest")
 MISTRAL_LOCAL_MODEL = os.getenv("MISTRAL_LOCAL_MODEL", "mistral")
 USE_LOCAL = os.getenv("USE_LOCAL_MODEL", "false").lower() == "true"
+
+# ─── RAG Evaluation Models ───────────────────────────────────────────────────
+
+class Score(str, Enum):
+    no_relevance = "0"
+    low_relevance = "1"
+    medium_relevance = "2"
+    high_relevance = "3"
+
+SCORE_DESCRIPTION = (
+    "Score as a string between '0' and '3'. "
+    "0: No relevance/Not grounded/Irrelevant. "
+    "1: Low relevance/Low groundedness/Somewhat relevant. "
+    "2: Medium relevance/Medium groundedness/Mostly relevant. "
+    "3: High relevance/High groundedness/Fully relevant."
+)
+
+class ContextRelevance(BaseModel):
+    explanation: str = Field(..., description="Reasoning for context relevance.")
+    score: Score = Field(..., description=SCORE_DESCRIPTION)
+
+class AnswerRelevance(BaseModel):
+    explanation: str = Field(..., description="Reasoning for answer relevance.")
+    score: Score = Field(..., description=SCORE_DESCRIPTION)
+
+class Groundedness(BaseModel):
+    explanation: str = Field(..., description="Reasoning for groundedness.")
+    score: Score = Field(..., description=SCORE_DESCRIPTION)
+
+class RAGEvaluation(BaseModel):
+    context_relevance: ContextRelevance = Field(..., description="Evaluation of context relevance.")
+    answer_relevance: AnswerRelevance = Field(..., description="Evaluation of answer relevance.")
+    groundedness: Groundedness = Field(..., description="Evaluation of groundedness.")
 
 
 class MistralComplianceAgent:
@@ -94,7 +128,8 @@ class MistralComplianceAgent:
             status=status,
             mistral_model=self.model,
             created_at=datetime.now(UTC),
-            completed_at=datetime.now(UTC)
+            completed_at=datetime.now(UTC),
+            fingerprint=generate_fingerprint({"findings": findings, "agent": "mistral"})
         )
         db.add(record)
         await db.commit()
@@ -247,6 +282,39 @@ class MistralComplianceAgent:
                 ],
             )
             return response.choices[0].message.content
+
+    async def evaluate_rag(self, query: str, retrieved_context: str, generated_answer: str) -> Optional[RAGEvaluation]:
+        """Evaluate RAG performance using Mistral as a Judge (Structured Outputs)."""
+        if not self.client or not self.use_mistral_client:
+            return None
+
+        try:
+            chat_response = await self.client.chat.parse_async(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a judge for evaluating a Retrieval-Augmented Generation (RAG) system. "
+                            "Evaluate the context relevance, answer relevance, and groundedness based on the following criteria: "
+                            "Provide a reasoning and a score as a string between '0' and '3' for each criterion. "
+                            "Context Relevance: How relevant is the retrieved context to the query? "
+                            "Answer Relevance: How relevant is the generated answer to the query? "
+                            "Groundedness: How faithful is the generated answer to the retrieved context?"
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Query: {query}\nRetrieved Context: {retrieved_context}\nGenerated Answer: {generated_answer}"
+                    },
+                ],
+                response_format=RAGEvaluation,
+                temperature=0
+            )
+            return chat_response.choices[0].message.parsed
+        except Exception as e:
+            print(f"RAG Evaluation error: {e}")
+            return None
 
 
 # ─── FastAPI router for Mistral agent endpoints ────────────────────────────────

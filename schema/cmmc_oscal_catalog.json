@@ -64,6 +64,15 @@
       "weight": 3
     },
     {
+      "id": "SC.1.176",
+      "title": "Manage individual identifiers",
+      "description": "Manage individual system identifiers for all users and devices.",
+      "domain": "SC",
+      "level": "Level 1",
+      "nist_mapping": "3.13.2",
+      "weight": 3
+    },
+    {
       "id": "SI.1.210",
       "title": "Identify, report, and correct information and system flaws",
       "description": "Identify, report, and correct information and system flaws in a timely manner.",
@@ -71,6 +80,24 @@
       "level": "Level 1",
       "nist_mapping": "3.14.1",
       "weight": 3
+    },
+    {
+      "id": "MP.1.118",
+      "title": "Sanitize or destroy system media",
+      "description": "Sanitize or destroy system media containing Federal Contract Information before disposal or release for reuse.",
+      "domain": "MP",
+      "level": "Level 1",
+      "nist_mapping": "3.8.3",
+      "weight": 3
+    },
+    {
+      "id": "SC.3.177",
+      "title": "Employ FIPS-validated cryptography",
+      "description": "Employ FIPS-validated cryptography when used to protect the confidentiality of CUI.",
+      "domain": "SC",
+      "level": "Level 2",
+      "nist_mapping": "3.13.11",
+      "weight": 5
     }
   ]
 }

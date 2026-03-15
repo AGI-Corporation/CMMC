@@ -4,9 +4,11 @@ AGI Corporation CMMC Platform 2026
 """
 import os
 import json
+import hashlib
+from typing import Any
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select
+from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select, func
 from datetime import datetime, UTC
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cmmc.db")
@@ -29,6 +31,7 @@ class Base(DeclarativeBase):
 class ControlRecord(Base):
     __tablename__ = "controls"
     id = Column(String, primary_key=True, index=True)  # e.g. AC.1.001
+    framework = Column(String, index=True, default="CMMC")
     domain = Column(String, index=True)
     level = Column(String)
     title = Column(String)
@@ -61,6 +64,7 @@ class EvidenceRecord(Base):
 class AssessmentRecord(Base):
     __tablename__ = "assessments"
     id = Column(String, primary_key=True, index=True)
+    framework = Column(String, index=True, default="CMMC")
     system_name = Column(String)
     control_id = Column(String, index=True)
     status = Column(String)  # implemented/partial/planned/not_implemented/na
@@ -71,11 +75,13 @@ class AssessmentRecord(Base):
     assessment_date = Column(DateTime, default=lambda: datetime.now(UTC))
     next_review = Column(DateTime)
     poam_required = Column(String, default="false")
+    fingerprint = Column(String, nullable=True)  # OML provenance fingerprint
 
 
 class AgentRunRecord(Base):
     __tablename__ = "agent_runs"
     id = Column(String, primary_key=True, index=True)
+    framework = Column(String, index=True, default="CMMC")
     agent_type = Column(String)  # orchestrator/icam/data/infra/devsecops/governance/ops
     trigger = Column(String)  # code_push/incident/schedule/manual
     scope = Column(String)
@@ -85,6 +91,13 @@ class AgentRunRecord(Base):
     mistral_model = Column(String)  # mistral model used for this run
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime)
+    fingerprint = Column(String, nullable=True)  # OML provenance fingerprint
+
+
+def generate_fingerprint(data: Any) -> str:
+    """Generate OML-inspired SHA-256 fingerprint for data integrity."""
+    serialized = json.dumps(data, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode()).hexdigest()
 
 
 async def init_db():
@@ -96,23 +109,56 @@ async def init_db():
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(ControlRecord))
         if not result.scalars().first():
-            schema_path = os.getenv("OSCAL_CATALOG_PATH", "./schema/cmmc_oscal_catalog.json")
-            if os.path.exists(schema_path):
-                with open(schema_path) as f:
-                    data = json.load(f)
-                    controls = data.get("controls", [])
-                    for c in controls:
-                        db_ctrl = ControlRecord(
-                            id=c["id"],
-                            domain=c["domain"],
-                            level=c["level"],
-                            title=c["title"],
-                            description=c["description"],
-                            nist_mapping=c.get("nist_mapping"),
-                            score_value=c.get("weight", 1)
-                        )
-                        session.add(db_ctrl)
-                await session.commit()
+            catalogs = [
+                ("./schema/cmmc_oscal_catalog.json", "CMMC"),
+                ("./schema/nist_catalog.json", "NIST"),
+                ("./schema/hipaa_catalog.json", "HIPAA"),
+                ("./schema/fhir_catalog.json", "FHIR"),
+            ]
+            for schema_path, framework in catalogs:
+                if os.path.exists(schema_path):
+                    with open(schema_path) as f:
+                        data = json.load(f)
+                        controls = data.get("controls", [])
+                        for c in controls:
+                            db_ctrl = ControlRecord(
+                                id=c["id"],
+                                framework=framework,
+                                domain=c["domain"],
+                                level=c["level"],
+                                title=c["title"],
+                                description=c["description"],
+                                nist_mapping=c.get("nist_mapping"),
+                                score_value=c.get("weight", 1)
+                            )
+                            session.add(db_ctrl)
+            await session.commit()
+
+
+async def get_latest_assessments(db: AsyncSession):
+    """Fetch the most recent assessment for each control ID."""
+    # Subquery for latest assessment date per control_id
+    sub_q = (
+        select(
+            AssessmentRecord.control_id,
+            func.max(AssessmentRecord.assessment_date).label("max_date")
+        )
+        .group_by(AssessmentRecord.control_id)
+        .subquery()
+    )
+
+    # Join with the original table to get full records
+    query = (
+        select(AssessmentRecord)
+        .join(
+            sub_q,
+            (AssessmentRecord.control_id == sub_q.c.control_id) &
+            (AssessmentRecord.assessment_date == sub_q.c.max_date)
+        )
+    )
+
+    result = await db.execute(query)
+    return {a.control_id: a for a in result.scalars().all()}
 
 
 async def get_db():

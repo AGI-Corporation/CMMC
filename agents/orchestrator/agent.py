@@ -16,13 +16,18 @@ from enum import Enum
 from dataclasses import dataclass, field
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import get_db, AgentRunRecord, ControlRecord, AssessmentRecord
+from backend.db.database import get_db, AgentRunRecord, ControlRecord, AssessmentRecord, get_latest_assessments, generate_fingerprint
 from sqlalchemy import select, func
+from agents.mistral_agent.agent import agent as mistral_agent
+from agents.icam_agent.agent import _icam
+from agents.devsecops_agent.agent import _dso
+from agents.infra_agent.agent import _infra
+from agents.data_agent.agent import _data
 
 class AgentType(str, Enum):
     ICAM = "icam"                     # Identity/Credential/Access Mgmt
-    DATA = "data_protection"           # Data-centric security
-    INFRA = "infrastructure"           # Network/micro-segmentation
+    DATA = "data"                      # Data-centric security
+    INFRA = "infra"                    # Network/micro-segmentation
     DEVSECOPS = "devsecops"            # DevSecOps/supply chain
     GOVERNANCE = "governance"          # Policy/risk/POA&M
     OPS = "operations"                 # IR/SIEM/SOAR
@@ -131,35 +136,15 @@ class ComplianceOrchestrator:
         self.task_queue.append(task)
         return task
 
-    async def _get_latest_assessments(self, db: AsyncSession):
-        sub_q = (
-            select(
-                AssessmentRecord.control_id,
-                func.max(AssessmentRecord.assessment_date).label("max_date")
-            )
-            .group_by(AssessmentRecord.control_id)
-            .subquery()
-        )
-        query = (
-            select(AssessmentRecord)
-            .join(
-                sub_q,
-                (AssessmentRecord.control_id == sub_q.c.control_id) &
-                (AssessmentRecord.assessment_date == sub_q.c.max_date)
-            )
-        )
-        result = await db.execute(query)
-        return {a.control_id: a for a in result.scalars().all()}
-
-    async def compute_sprs_score(self, db: AsyncSession) -> Dict[str, Any]:
+    async def compute_sprs_score(self, db: AsyncSession, framework: str = "CMMC") -> Dict[str, Any]:
         """Compute SPRS score using methodology from assessment.py."""
-        result = await db.execute(select(ControlRecord))
+        result = await db.execute(select(ControlRecord).where(ControlRecord.framework == framework))
         controls = result.scalars().all()
         sprs = 110
         deductions_list = []
         implemented_count = not_implemented_count = 0
 
-        assessments_map = await self._get_latest_assessments(db)
+        assessments_map = await get_latest_assessments(db)
 
         for c in controls:
             cid = c.id
@@ -183,13 +168,13 @@ class ComplianceOrchestrator:
             "deductions": deductions_list
         }
 
-    async def compute_zt_scorecard(self, db: AsyncSession) -> List[Dict[str, Any]]:
+    async def compute_zt_scorecard(self, db: AsyncSession, framework: str = "CMMC") -> List[Dict[str, Any]]:
         """Generate per-ZT-pillar maturity scorecard from database."""
         scorecard = []
-        assessments_map = await self._get_latest_assessments(db)
+        assessments_map = await get_latest_assessments(db)
 
         for pillar, domains in self.ZT_DOMAIN_MAP.items():
-            query = select(ControlRecord).where(ControlRecord.domain.in_(domains))
+            query = select(ControlRecord).where(ControlRecord.domain.in_(domains)).where(ControlRecord.framework == framework)
             result = await db.execute(query)
             controls = result.scalars().all()
 
@@ -226,10 +211,10 @@ class ComplianceOrchestrator:
             })
         return scorecard
 
-    async def generate_report(self, db: AsyncSession) -> Dict[str, Any]:
+    async def generate_report(self, db: AsyncSession, framework: str = "CMMC") -> Dict[str, Any]:
         """Generate a complete compliance run report."""
-        sprs_data = await self.compute_sprs_score(db)
-        zt_scorecard = await self.compute_zt_scorecard(db)
+        sprs_data = await self.compute_sprs_score(db, framework=framework)
+        zt_scorecard = await self.compute_zt_scorecard(db, framework=framework)
 
         runs_query = select(AgentRunRecord).order_by(AgentRunRecord.created_at.desc()).limit(10)
         runs_result = await db.execute(runs_query)
@@ -243,10 +228,12 @@ class ComplianceOrchestrator:
             "zt_scorecard": zt_scorecard,
             "agent_runs": [
                 {
+                    "id": r.id,
                     "agent": r.agent_type,
                     "status": r.status,
                     "created_at": r.created_at.isoformat(),
-                    "scope": r.scope
+                    "scope": r.scope,
+                    "fingerprint": r.fingerprint
                 }
                 for r in runs
             ],
@@ -275,15 +262,116 @@ async def create_task(trigger: str, scope: str, controls: str = ""):
 
 
 @router.get("/scorecard", summary="Get ZT pillar compliance scorecard")
-async def get_scorecard(db: AsyncSession = Depends(get_db)):
+async def get_scorecard(framework: str = "CMMC", db: AsyncSession = Depends(get_db)):
     """Return current ZT pillar maturity scorecard."""
     return {
-        "scorecard": await _orchestrator.compute_zt_scorecard(db),
-        "sprs": await _orchestrator.compute_sprs_score(db),
+        "scorecard": await _orchestrator.compute_zt_scorecard(db, framework=framework),
+        "sprs": await _orchestrator.compute_sprs_score(db, framework=framework),
     }
 
 
 @router.get("/report", summary="Generate full compliance run report")
-async def get_report(db: AsyncSession = Depends(get_db)):
+async def get_report(framework: str = "CMMC", db: AsyncSession = Depends(get_db)):
     """Generate and return a full compliance report."""
-    return await _orchestrator.generate_report(db)
+    return await _orchestrator.generate_report(db, framework=framework)
+
+
+@router.post("/run", summary="Trigger a full orchestrated compliance assessment")
+async def trigger_full_run(framework: str = "CMMC", db: AsyncSession = Depends(get_db)):
+    """
+    Executes a full compliance assessment across all specialist agents.
+    1. Triggers specialist agents based on framework.
+    2. Aggregates results.
+    3. Generates an AI summary using Mistral.
+    4. Persists the orchestrated run record.
+    """
+    # 1. Run specialist agents based on framework
+    agent_results = {}
+    if framework == "CMMC":
+        agent_results["icam"] = await _icam.run_full_assessment(db, trigger="orchestrated")
+        agent_results["devsecops"] = await _dso.run_full_assessment(db, trigger="orchestrated")
+        agent_results["infra"] = await _infra.run_full_assessment(db, trigger="orchestrated")
+        agent_results["data"] = await _data.run_full_assessment(db, trigger="orchestrated")
+    elif framework == "NIST":
+        from agents.nist_agent.agent import _nist
+        agent_results["nist"] = await _nist.run_full_assessment(db, trigger="orchestrated")
+    elif framework == "HIPAA":
+        from agents.hipaa_agent.agent import _hipaa
+        agent_results["hipaa"] = await _hipaa.run_full_assessment(db, trigger="orchestrated")
+    elif framework == "FHIR":
+        from agents.fhir_agent.agent import _fhir
+        agent_results["fhir"] = await _fhir.run_full_assessment(db, trigger="orchestrated")
+
+    # 2. Compute scores
+    sprs = await _orchestrator.compute_sprs_score(db, framework=framework)
+    scorecard = await _orchestrator.compute_zt_scorecard(db, framework=framework)
+
+    # 3. Generate AI Summary with Mistral & Evaluate RAG
+    findings_summary = ""
+    for agent_key, res in agent_results.items():
+        if isinstance(res, list):
+            findings_summary += f"- {agent_key.upper()}: {len(res)} controls assessed.\n"
+        elif isinstance(res, dict):
+            findings_summary += f"- {agent_key.upper()}: {res.get('status', 'completed')} assessment.\n"
+
+    summary_context = f"""
+    Assessment completed for framework {framework}.
+    SPRS Score: {sprs['sprs_score']}
+    ZT Maturity Scorecard: {json.dumps(scorecard)}
+    Specialist Findings:
+    {findings_summary}
+    """
+
+    summary_query = "Generate a 2-sentence executive summary of this compliance assessment run."
+    ai_summary = await mistral_agent.answer_compliance_question(
+        summary_query,
+        context=summary_context
+    )
+
+    # Mistral-as-a-Judge RAG Evaluation
+    rag_eval = await mistral_agent.evaluate_rag(
+        query=summary_query,
+        retrieved_context=summary_context,
+        generated_answer=ai_summary
+    )
+
+    # 4. Record Orchestrator Run
+    run_id = str(uuid.uuid4())
+
+    controls_evaluated = []
+    for res in agent_results.values():
+        if isinstance(res, list):
+            controls_evaluated.extend([r["control_id"] for r in res])
+        elif isinstance(res, dict):
+            controls_evaluated.extend(res.get("controls_evaluated", []))
+            if "findings" in res and isinstance(res["findings"], list):
+                controls_evaluated.extend([f["control_id"] for f in res["findings"]])
+
+    orchestrator_run = AgentRunRecord(
+        id=run_id,
+        framework=framework,
+        agent_type="orchestrator",
+        trigger="manual",
+        scope=f"Full {framework} Assessment",
+        controls_evaluated=list(set(controls_evaluated)),
+        findings={
+            "ai_summary": ai_summary,
+            "rag_evaluation": rag_eval.dict() if rag_eval else None,
+            "sprs": sprs,
+            "scorecard": scorecard,
+            "agent_runs": agent_results
+        },
+        status="completed",
+        created_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
+        fingerprint=generate_fingerprint({"ai_summary": ai_summary, "sprs": sprs["sprs_score"]})
+    )
+    db.add(orchestrator_run)
+    await db.commit()
+
+    return {
+        "run_id": run_id,
+        "status": "completed",
+        "ai_summary": ai_summary,
+        "sprs_score": sprs["sprs_score"]
+    }
