@@ -1,0 +1,32 @@
+{
+  "framework": "NIST SP 800-171",
+  "controls": [
+    {
+      "id": "NIST-3.1.1",
+      "title": "Limit system access to authorized users",
+      "description": "Limit system access to authorized users, processes acting on behalf of authorized users, and devices (including other systems).",
+      "domain": "Access Control",
+      "level": "Basic",
+      "nist_mapping": "3.1.1",
+      "weight": 5
+    },
+    {
+      "id": "NIST-3.1.2",
+      "title": "Limit system access to types of transactions",
+      "description": "Limit system access to the types of transactions and functions that authorized users are permitted to execute.",
+      "domain": "Access Control",
+      "level": "Basic",
+      "nist_mapping": "3.1.2",
+      "weight": 5
+    },
+    {
+      "id": "NIST-3.5.1",
+      "title": "Identify system users",
+      "description": "Identify system users, processes acting on behalf of users, or devices.",
+      "domain": "Identification and Authentication",
+      "level": "Basic",
+      "nist_mapping": "3.5.1",
+      "weight": 3
+    }
+  ]
+}

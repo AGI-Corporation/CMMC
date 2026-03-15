@@ -2,7 +2,7 @@
 Assessment Router - SPRS score calculation and compliance dashboard.
 These endpoints become MCP tools: calculate_sprs_score, get_compliance_dashboard.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 import os
@@ -11,7 +11,7 @@ from datetime import datetime, UTC
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from backend.db.database import get_db, ControlRecord, AssessmentRecord, AgentRunRecord
+from backend.db.database import get_db, ControlRecord, AssessmentRecord, AgentRunRecord, get_latest_assessments
 
 router = APIRouter()
 
@@ -55,46 +55,32 @@ class SPRSResult(BaseModel):
     certification_level: str
     assessment_date: str
 
-async def get_latest_assessments(db: AsyncSession):
-    sub_q = (
-        select(
-            AssessmentRecord.control_id,
-            func.max(AssessmentRecord.assessment_date).label("max_date")
-        )
-        .group_by(AssessmentRecord.control_id)
-        .subquery()
-    )
-    query = (
-        select(AssessmentRecord)
-        .join(
-            sub_q,
-            (AssessmentRecord.control_id == sub_q.c.control_id) &
-            (AssessmentRecord.assessment_date == sub_q.c.max_date)
-        )
-    )
-    result = await db.execute(query)
-    return {a.control_id: a for a in result.scalars().all()}
-
 @router.get(
     "/dashboard",
     response_model=DashboardSummary,
     summary="Get Compliance Dashboard",
     description="Get overall CMMC compliance posture summary including implementation percentages, SPRS score, and breakdown by domain and level."
 )
-async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(ControlRecord))
+async def get_compliance_dashboard(
+    framework: str = Query("CMMC", description="Filter by framework (CMMC, NIST, HIPAA, FHIR)"),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(ControlRecord).where(ControlRecord.framework == framework))
     controls = result.scalars().all()
 
     assessments_map = await get_latest_assessments(db)
     
     by_domain = {}
-    by_level = {"Level 1": {"total": 0, "implemented": 0}, "Level 2": {"total": 0, "implemented": 0}, "Level 3": {"total": 0, "implemented": 0}}
+    by_level = {}
     implemented = not_implemented = partial = not_started = not_applicable = 0
     sprs_score = 110  # Start at max, deduct for non-implemented
 
     for c in controls:
         domain = c.domain
-        level = c.level
+        level = c.level or "Required"
+
+        if level not in by_level:
+            by_level[level] = {"total": 0, "implemented": 0}
         cid = c.id
 
         assessment = assessments_map.get(cid)
@@ -118,6 +104,9 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
             sprs_score -= deduction
         elif status == "partially_implemented" or status == "partial":
             partial += 1
+            # Consistent with sprs endpoint: partially implemented also deducts points
+            deduction = SPRS_DEDUCTIONS.get(cid, 1)
+            sprs_score -= deduction
         elif status == "not_applicable":
             not_applicable += 1
         else:
@@ -126,14 +115,22 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     total = len(controls)
     pct = (implemented / total * 100) if total > 0 else 0
     
-    if pct >= 100:
-        readiness = "Ready for Certification"
-    elif pct >= 80:
-        readiness = "Near Compliant - Minor Gaps"
-    elif pct >= 60:
-        readiness = "In Progress - Significant Gaps"
+    if framework == "HIPAA":
+        if pct >= 100: readiness = "Fully HIPAA Compliant"
+        elif pct >= 75: readiness = "Substantial Compliance - Addressable Gaps"
+        else: readiness = "High Risk - Mandatory Safeguards Missing"
+    elif framework == "FHIR":
+        if pct >= 100: readiness = "Fully Interoperable & Secure"
+        else: readiness = "Integration in Progress"
     else:
-        readiness = "Early Stage - Major Remediation Needed"
+        if pct >= 100:
+            readiness = "Ready for Certification"
+        elif pct >= 80:
+            readiness = "Near Compliant - Minor Gaps"
+        elif pct >= 60:
+            readiness = "In Progress - Significant Gaps"
+        else:
+            readiness = "Early Stage - Major Remediation Needed"
 
     return DashboardSummary(
         total_controls=total,
@@ -156,8 +153,11 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     summary="Calculate SPRS Score",
     description="Calculate the DoD Supplier Performance Risk System (SPRS) score based on current control implementation status. Score ranges from -203 to 110."
 )
-async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(ControlRecord))
+async def calculate_sprs_score(
+    framework: str = Query("CMMC", description="Filter by framework (CMMC, NIST, HIPAA, FHIR)"),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(ControlRecord).where(ControlRecord.framework == framework))
     controls = result.scalars().all()
 
     assessments_map = await get_latest_assessments(db)
@@ -212,45 +212,54 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
     findings = run.findings
     promoted_count = 0
 
+    def create_assessment(control_id, status, confidence, notes, evidence_ids):
+        return AssessmentRecord(
+            id=str(uuid.uuid4()),
+            framework=run.framework,
+            control_id=control_id,
+            status=status,
+            confidence=confidence,
+            notes=f"Promoted from {run.agent_type} agent run {run_id}. {notes}",
+            evidence_ids=evidence_ids or [],
+            assessor=f"Agent: {run.agent_type}",
+            assessment_date=datetime.now(UTC),
+            poam_required="true" if status in ["partial", "not_implemented", "partially_implemented"] else "false",
+            fingerprint=run.fingerprint
+        )
+
     # Logic for ICAM promotion
     if run.agent_type == "icam":
         results = findings.get("results", [])
         for res in results:
-            new_ass = AssessmentRecord(
-                id=str(uuid.uuid4()),
-                control_id=res["control_id"],
-                status=res["status"],
-                confidence=res["confidence"],
-                notes=f"Promoted from {run.agent_type} agent run {run_id}. Findings: {', '.join(res['findings'])}",
-                evidence_ids=[res["evidence_id"]],
-                assessor=f"Agent: {run.agent_type}",
-                assessment_date=datetime.now(UTC),
-                poam_required="true" if res["status"] in ["partial", "not_implemented", "partially_implemented"] else "false"
-            )
-            db.add(new_ass)
+            db.add(create_assessment(
+                res["control_id"], res["status"], res["confidence"],
+                f"Findings: {', '.join(res['findings'])}", [res["evidence_id"]]
+            ))
             promoted_count += 1
 
     # Logic for DevSecOps promotion
     elif run.agent_type == "devsecops":
-        # DSO provides overall confidence and detailed scan results
-        # We'll map to specific controls it evaluated
         controls = run.controls_evaluated
         overall_conf = findings.get("overall_confidence", 0.0)
         status = findings.get("status", "partially_implemented")
+        evidence_id = findings.get("image_scan", {}).get("evidence_id")
 
         for cid in controls:
-            new_ass = AssessmentRecord(
-                id=str(uuid.uuid4()),
-                control_id=cid,
-                status=status,
-                confidence=overall_conf,
-                notes=f"Promoted from {run.agent_type} agent run {run_id} for service {findings.get('service')}.",
-                evidence_ids=[findings.get("image_scan", {}).get("evidence_id")],
-                assessor=f"Agent: {run.agent_type}",
-                assessment_date=datetime.now(UTC),
-                poam_required="true" if status in ["partial", "not_implemented", "partially_implemented"] else "false"
-            )
-            db.add(new_ass)
+            db.add(create_assessment(
+                cid, status, overall_conf,
+                f"For service {findings.get('service')}.", [evidence_id] if evidence_id else []
+            ))
+            promoted_count += 1
+
+    # Generic logic for multi-finding agents (infra, data, nist, hipaa, fhir)
+    elif run.agent_type in ["infra", "data", "nist", "hipaa", "fhir"]:
+        agent_findings = findings.get("findings", [])
+        evidence_id = findings.get("evidence_id")
+        for f in agent_findings:
+            db.add(create_assessment(
+                f["control_id"], f["status"], f["confidence"],
+                f"Finding: {f['finding']}", [evidence_id] if evidence_id else []
+            ))
             promoted_count += 1
 
     await db.commit()

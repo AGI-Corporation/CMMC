@@ -1,0 +1,50 @@
+{
+  "framework": "FHIR",
+  "controls": [
+    {
+      "id": "FHIR-SEC-1",
+      "title": "FHIR Communications Security",
+      "description": "All FHIR communications should be encrypted using TLS/SSL.",
+      "domain": "Security",
+      "level": "Required",
+      "nist_mapping": "SC-8",
+      "weight": 5
+    },
+    {
+      "id": "FHIR-PRIV-1",
+      "title": "FHIR Patient Consent",
+      "description": "Ensure patient consent is recorded and respected before sharing FHIR resources.",
+      "domain": "Privacy",
+      "level": "Required",
+      "nist_mapping": "AC-1",
+      "weight": 5
+    },
+    {
+      "id": "FHIR-SMART-1",
+      "title": "SMART App Launch Support",
+      "description": "Support SMART App Launch 2.2.0 for standardized app-to-server authorization.",
+      "domain": "Interoperability",
+      "level": "Required",
+      "nist_mapping": "AC-3",
+      "weight": 5
+    },
+    {
+      "id": "FHIR-OAUTH-1",
+      "title": "OAuth 2.0 / OpenID Connect",
+      "description": "Implement OAuth 2.0 with PKCE and OIDC for secure identity management.",
+      "domain": "Identity",
+      "level": "Required",
+      "nist_mapping": "IA-2",
+      "weight": 5
+    },
+    {
+      "id": "FHIR-TYPE-1",
+      "title": "FHIR Type Safety & Validation",
+      "description": "Enforce strict type safety and profile-aware validation for all FHIR resources (BabelFHIR-TS approach).",
+      "domain": "Data Integrity",
+      "level": "Addressable",
+      "nist_mapping": "SI-10",
+      "weight": 3
+    }
+  ]
+}

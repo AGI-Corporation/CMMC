@@ -14,11 +14,16 @@ from contextlib import asynccontextmanager
 import json
 import os
 
-from backend.routers import controls, assessment, evidence, reports
+from backend.routers import controls, assessment, evidence, reports, nanda, simulation
 from agents.orchestrator import agent as orchestrator
 from agents.icam_agent import agent as icam
 from agents.devsecops_agent import agent as devsecops
 from agents.mistral_agent import agent as mistral
+from agents.infra_agent import agent as infra
+from agents.data_agent import agent as data
+from agents.nist_agent import agent as nist
+from agents.hipaa_agent import agent as hipaa
+from agents.fhir_agent import agent as fhir
 
 from backend.db.database import init_db
 from dotenv import load_dotenv
@@ -65,12 +70,21 @@ app.include_router(controls.router, prefix="/api/controls", tags=["Controls"])
 app.include_router(assessment.router, prefix="/api/assessment", tags=["Assessment"])
 app.include_router(evidence.router, prefix="/api/evidence", tags=["Evidence"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
+app.include_router(simulation.router, prefix="/api/simulation", tags=["Brain Simulation"])
+
+# NANDA Registry
+app.include_router(nanda.router, prefix="/api/nanda", tags=["NANDA Protocol"])
 
 # Agent Routers
 app.include_router(orchestrator.router, prefix="/api/orchestrator", tags=["Orchestrator"])
 app.include_router(icam.router, prefix="/api/agents/icam", tags=["ICAM Agent"])
 app.include_router(devsecops.router, prefix="/api/agents/devsecops", tags=["DevSecOps Agent"])
 app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
+app.include_router(infra.router, prefix="/api/agents/infra", tags=["Infrastructure Agent"])
+app.include_router(data.router, prefix="/api/agents/data", tags=["Data Agent"])
+app.include_router(nist.router, prefix="/api/agents/nist", tags=["NIST Agent"])
+app.include_router(hipaa.router, prefix="/api/agents/hipaa", tags=["HIPAA Agent"])
+app.include_router(fhir.router, prefix="/api/agents/fhir", tags=["FHIR Agent"])
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
@@ -101,7 +115,7 @@ mcp = FastApiMCP(
     description="MCP server for CMMC 2.0 compliance automation. Provides tools for control lookup, evidence collection, assessment scoring, SPRS calculation, and SSP/POAM generation.",
 )
 
-mcp.mount()
+mcp.mount_http()
 
 # ─── MCP endpoint is now available at /mcp ─────────────────────────────────────
 # Add to claude_desktop_config.json:

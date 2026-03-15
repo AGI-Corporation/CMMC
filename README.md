@@ -1,4 +1,4 @@
-# CMMC Compliance Framework
+# CMMC Compliance Hackathon Platform
 
 > AI-powered CMMC 2.0 compliance automation platform built for the AGI Corporation hackathon. Leverages Model Context Protocol (MCP), OSCAL machine-readable schemas, and FastAPI to automate evidence collection, control assessments, and SSP/POAM generation.
 
@@ -98,7 +98,8 @@ CMMC/
 | Schema | NIST OSCAL JSON (machine-readable) |
 | Database | SQLite (dev) / PostgreSQL (prod) |
 | Frontend | React 19 + TypeScript + Tailwind CSS |
-| AI | OpenAI GPT-4 / Claude / Ollama (local) |
+| AI | Mistral Large 2 / Codestral / OpenAI / Claude / Ollama |
+| AI Quality | Mistral-as-a-Judge RAG Evaluation |
 | GRC Automation | ComplianceCow MCP |
 | Repo Automation | GitHub MCP Server |
 
@@ -177,6 +178,7 @@ Add to your `claude_desktop_config.json`:
 
 Once the server is running, the following MCP tools are available to AI agents:
 
+- `evaluate_rag` - Evaluate AI response quality (context relevance, groundedness)
 - `list_controls` - List all CMMC controls by domain/level
 - `get_control_detail` - Get full details of a specific control
 - `submit_assessment` - Submit assessment status for a control
@@ -185,6 +187,17 @@ Once the server is running, the following MCP tools are available to AI agents:
 - `generate_ssp` - Generate System Security Plan in Markdown
 - `generate_poam` - Generate POAM CSV for unimplemented controls
 - `get_compliance_dashboard` - Get overall compliance posture summary
+- `get_simulation_state` - Get real-time agent "brain" simulation state
+
+---
+
+## Brain Simulation (OAGD Protocol)
+
+This platform features an active **Brain Simulation** that visualizes agent interactions as a neural network. Powered by the **Networked AI Agents in a Decentralized Architecture (NANDA)** protocol and **Sentient OML** provenance tracking, it provides:
+
+- **Neural Mapping**: Real-time visualization of agent "firing" during compliance assessments.
+- **Synaptic Throughput**: Tracking of message passing between the Orchestrator and specialist agents.
+- **Cryptographic Integrity**: Every "thought" (agent run) is fingerprinted for end-to-end auditability.
 
 ---
 
