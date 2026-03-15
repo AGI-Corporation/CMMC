@@ -1,5 +1,5 @@
-import pytest
 from backend.routers.reports import get_status_emoji, get_confidence_stars, get_progress_bar
+
 
 def test_get_status_emoji():
     assert get_status_emoji("implemented") == "✅"
@@ -11,6 +11,7 @@ def test_get_status_emoji():
     assert get_status_emoji("not_started") == "⚪"
     assert get_status_emoji("unknown") == "⚪"
 
+
 def test_get_confidence_stars():
     assert get_confidence_stars(0.0) == "☆☆☆☆☆"
     assert get_confidence_stars(0.2) == "⭐☆☆☆☆"
@@ -19,6 +20,7 @@ def test_get_confidence_stars():
     assert get_confidence_stars(0.6) == "⭐⭐⭐☆☆"
     assert get_confidence_stars(0.8) == "⭐⭐⭐⭐☆"
     assert get_confidence_stars(1.0) == "⭐⭐⭐⭐⭐"
+
 
 def test_get_progress_bar():
     bar_0 = get_progress_bar(0, width=10)

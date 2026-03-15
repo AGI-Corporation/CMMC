@@ -9,13 +9,11 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from typing import List, Dict, Any
 from datetime import datetime, date, UTC
 import csv
 import io
-import json
 
-from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord
+from backend.db.database import get_db, AssessmentRecord, ControlRecord
 
 router = APIRouter()
 
@@ -72,6 +70,7 @@ async def get_latest_assessments(db: AsyncSession):
     result = await db.execute(query)
     return result.scalars().all()
 
+
 @router.get("/ssp", summary="Generate System Security Plan (SSP) in Markdown")
 async def generate_ssp(
     system_name: str = "AGI Corp CMMC System",
@@ -93,7 +92,7 @@ async def generate_ssp(
         if a.status in status_counts:
             status_counts[a.status] += 1
         elif a.status == "partially_implemented":
-             status_counts["partial"] += 1
+            status_counts["partial"] += 1
 
     sprs_estimate = 110 - (status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5)
     sprs_estimate = max(-203, round(sprs_estimate, 0))
@@ -104,10 +103,10 @@ async def generate_ssp(
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
-**Classification:** {classification}  
+**Classification:** {classification}
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
-**Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
-**SPRS Score Estimate:** {sprs_estimate}  
+**Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2
+**SPRS Score Estimate:** {sprs_estimate}
 
 ---
 
@@ -213,7 +212,7 @@ async def generate_poam(
     return PlainTextResponse(
         content=csv_content,
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="poam_{system_name.replace(" ","_")}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="poam_{system_name.replace(" ", "_")}.csv"'},
     )
 
 
@@ -230,7 +229,7 @@ async def get_dashboard(
         if a.status in status_counts:
             status_counts[a.status] += 1
         elif a.status == "partially_implemented":
-             status_counts["partial"] += 1
+            status_counts["partial"] += 1
 
     total_assessed = len(assessments)
     implemented = status_counts["implemented"]
