@@ -9,8 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (AssessmentRecord, ControlRecord, get_db,
-                                 get_latest_assessments)
+from backend.db.database import AssessmentRecord, ControlRecord, get_db
 from backend.models.control import (CMMCLevel, Control, ControlDomain,
                                     ControlListResponse, ControlResponse,
                                     ControlUpdate, ImplementationStatus)
