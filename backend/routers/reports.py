@@ -19,6 +19,31 @@ from backend.db.database import get_db, AssessmentRecord, ControlRecord, Evidenc
 
 router = APIRouter()
 
+def get_status_emoji(status: str) -> str:
+    """Return a visual emoji representation for implementation status."""
+    status_map = {
+        "implemented": "✅",
+        "partial": "🟡",
+        "partially_implemented": "🟡",
+        "planned": "📝",
+        "not_implemented": "🛑",
+        "na": "⚪",
+        "not_started": "⚪"
+    }
+    return status_map.get(status.lower(), "❓")
+
+def get_confidence_stars(confidence: float) -> str:
+    """Return a star-based visual for assessment confidence (0.0 to 1.0)."""
+    # Use standard rounding: 0.5 -> 3 stars, 0.4 -> 2 stars
+    stars = int(confidence * 5 + 0.5)
+    return "⭐" * stars if stars > 0 else "🌑"
+
+def get_progress_bar(percentage: float, width: int = 10) -> str:
+    """Return a markdown-compatible progress bar string."""
+    filled = int((percentage / 100) * width)
+    bar = "█" * filled + "░" * (width - filled)
+    return f"`{bar}` {percentage:.1f}%"
+
 async def get_latest_assessments(db: AsyncSession):
     # Subquery for latest assessment date per control_id
     subquery = (
@@ -66,6 +91,10 @@ async def generate_ssp(
         elif a.status == "partially_implemented":
              status_counts["partial"] += 1
 
+    total_controls_count = len(controls)
+    compliance_pct = (status_counts['implemented'] / total_controls_count * 100) if total_controls_count > 0 else 0
+    progress_bar = get_progress_bar(compliance_pct)
+
     sprs_estimate = 110 - (status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5)
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
@@ -75,6 +104,7 @@ async def generate_ssp(
 **Classification:** {classification}  
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
 **Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
+**Overall Progress:** {progress_bar}
 **SPRS Score Estimate:** {sprs_estimate}  
 
 ---
@@ -87,12 +117,12 @@ async def generate_ssp(
 | Owner | AGI Corporation |
 | Classification | {classification} |
 | Assessment Date | {date.today()} |
-| Total Controls | {len(controls)} |
-| Implemented | {status_counts['implemented']} |
-| Partial | {status_counts['partial']} |
-| Planned | {status_counts['planned']} |
-| Not Implemented | {status_counts['not_implemented']} |
-| N/A | {status_counts['na']} |
+| Total Controls | {total_controls_count} |
+| Implemented | {status_counts['implemented']} ✅ |
+| Partial | {status_counts['partial']} 🟡 |
+| Planned | {status_counts['planned']} 📝 |
+| Not Implemented | {status_counts['not_implemented']} 🛑 |
+| N/A | {status_counts['na']} ⚪ |
 
 ## 2. Control Implementation Summary
 
@@ -115,9 +145,12 @@ async def generate_ssp(
     for a in assessments[:20]:  # Limit for readability
         ctrl = controls.get(a.control_id)
         ctrl_title = ctrl.title if ctrl else "Unknown"
+        status_emoji = get_status_emoji(a.status)
+        confidence_stars = get_confidence_stars(a.confidence)
+
         ssp += f"""### {a.control_id} - {ctrl_title}
-- **Status:** {a.status}
-- **Confidence:** {a.confidence:.0%}
+- **Status:** {a.status} {status_emoji}
+- **Confidence:** {a.confidence:.0%} {confidence_stars}
 - **Notes:** {a.notes or 'None'}
 - **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}
 
