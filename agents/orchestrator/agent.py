@@ -16,7 +16,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import get_db, AgentRunRecord, ControlRecord, AssessmentRecord
+from backend.db.database import get_db, AgentRunRecord, ControlRecord, AssessmentRecord, get_latest_assessments
 from sqlalchemy import select, func
 
 class AgentType(str, Enum):
@@ -131,25 +131,6 @@ class ComplianceOrchestrator:
         self.task_queue.append(task)
         return task
 
-    async def _get_latest_assessments(self, db: AsyncSession):
-        sub_q = (
-            select(
-                AssessmentRecord.control_id,
-                func.max(AssessmentRecord.assessment_date).label("max_date")
-            )
-            .group_by(AssessmentRecord.control_id)
-            .subquery()
-        )
-        query = (
-            select(AssessmentRecord)
-            .join(
-                sub_q,
-                (AssessmentRecord.control_id == sub_q.c.control_id) &
-                (AssessmentRecord.assessment_date == sub_q.c.max_date)
-            )
-        )
-        result = await db.execute(query)
-        return {a.control_id: a for a in result.scalars().all()}
 
     async def compute_sprs_score(self, db: AsyncSession) -> Dict[str, Any]:
         """Compute SPRS score using methodology from assessment.py."""
@@ -159,7 +140,9 @@ class ComplianceOrchestrator:
         deductions_list = []
         implemented_count = not_implemented_count = 0
 
-        assessments_map = await self._get_latest_assessments(db)
+        # Bolt Optimization: Use centralized helper
+        control_ids = [c.id for c in controls]
+        assessments_map = await get_latest_assessments(db, control_ids=control_ids)
 
         for c in controls:
             cid = c.id
@@ -186,7 +169,8 @@ class ComplianceOrchestrator:
     async def compute_zt_scorecard(self, db: AsyncSession) -> List[Dict[str, Any]]:
         """Generate per-ZT-pillar maturity scorecard from database."""
         scorecard = []
-        assessments_map = await self._get_latest_assessments(db)
+        # Bolt Optimization: Fetch all relevant latest assessments once
+        assessments_map = await get_latest_assessments(db)
 
         for pillar, domains in self.ZT_DOMAIN_MAP.items():
             query = select(ControlRecord).where(ControlRecord.domain.in_(domains))
