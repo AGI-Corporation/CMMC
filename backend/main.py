@@ -15,6 +15,7 @@ import json
 import os
 
 from backend.routers import controls, assessment, evidence, reports
+from backend.middleware.security import SecurityHeadersMiddleware
 from agents.orchestrator import agent as orchestrator
 from agents.icam_agent import agent as icam
 from agents.devsecops_agent import agent as devsecops
@@ -57,6 +58,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ─── Security Headers ─────────────────────────────────────────────────────────
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
@@ -101,7 +106,7 @@ mcp = FastApiMCP(
     description="MCP server for CMMC 2.0 compliance automation. Provides tools for control lookup, evidence collection, assessment scoring, SPRS calculation, and SSP/POAM generation.",
 )
 
-mcp.mount()
+mcp.mount_http()
 
 # ─── MCP endpoint is now available at /mcp ─────────────────────────────────────
 # Add to claude_desktop_config.json:
