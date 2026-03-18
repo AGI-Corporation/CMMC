@@ -13,8 +13,12 @@ interface ControlResponse {
   control: Control;
   implementation_status: string;
   evidence_count: number;
+  notes?: string;
   confidence: number;
   poam_required: boolean;
+  assessor?: string;
+  assessment_date?: string;
+  fingerprint?: string;
 }
 
 const ControlExplorer: React.FC<{ framework?: string }> = ({ framework: initialFramework }) => {
@@ -23,6 +27,7 @@ const ControlExplorer: React.FC<{ framework?: string }> = ({ framework: initialF
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [domainFilter, setDomainFilter] = useState('');
+  const [selectedControl, setSelectedControl] = useState<ControlResponse | null>(null);
 
   const fetchControls = async () => {
     setLoading(true);
@@ -107,7 +112,7 @@ const ControlExplorer: React.FC<{ framework?: string }> = ({ framework: initialF
             {loading ? (
                 <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500">Loading controls...</td></tr>
             ) : filtered.map((c) => (
-              <tr key={c.control.id} className="hover:bg-gray-50 transition">
+              <tr key={c.control.id} onClick={() => setSelectedControl(c)} className="hover:bg-gray-50 transition cursor-pointer">
                 <td className="px-6 py-4 font-bold text-blue-700">{c.control.id}</td>
                 <td className="px-6 py-4 text-gray-900">{c.control.title}</td>
                 <td className="px-6 py-4 text-xs">
@@ -136,6 +141,79 @@ const ControlExplorer: React.FC<{ framework?: string }> = ({ framework: initialF
           </tbody>
         </table>
       </div>
+
+      {selectedControl && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 backdrop-blur-sm flex items-center justify-center p-8 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-start">
+              <div>
+                <h2 className="text-2xl font-black text-gray-900">{selectedControl.control.id}</h2>
+                <h3 className="text-lg font-bold text-gray-600">{selectedControl.control.title}</h3>
+              </div>
+              <button onClick={() => setSelectedControl(null)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-6">
+              <div>
+                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Description</h4>
+                <p className="text-gray-700 leading-relaxed">{selectedControl.control.description}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Implementation Status</h4>
+                  <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${
+                    selectedControl.implementation_status === 'implemented' ? 'bg-green-100 text-green-700' :
+                    selectedControl.implementation_status === 'partially_implemented' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {selectedControl.implementation_status.replace('_', ' ')}
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Confidence Score</h4>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 bg-gray-100 rounded-full h-2">
+                      <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${selectedControl.confidence * 100}%` }}></div>
+                    </div>
+                    <span className="text-sm font-black text-blue-600">{Math.round(selectedControl.confidence * 100)}%</span>
+                  </div>
+                </div>
+              </div>
+              {selectedControl.notes && (
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                  <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-2">Assessor Notes</h4>
+                  <p className="text-sm text-blue-900 leading-relaxed italic">"{selectedControl.notes}"</p>
+                </div>
+              )}
+
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 space-y-3">
+                <div className="flex justify-between items-center text-[10px] font-bold">
+                  <span className="text-gray-400 uppercase tracking-widest">Assessor</span>
+                  <span className="text-gray-900">{selectedControl.assessor || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between items-center text-[10px] font-bold">
+                  <span className="text-gray-400 uppercase tracking-widest">Assessment Date</span>
+                  <span className="text-gray-900">{selectedControl.assessment_date ? new Date(selectedControl.assessment_date).toLocaleString() : 'N/A'}</span>
+                </div>
+                {selectedControl.fingerprint && (
+                  <div className="pt-2 border-t border-gray-200">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">OML Fingerprint</span>
+                    <code className="text-[9px] text-blue-600 break-all bg-blue-50 px-1 py-0.5 rounded leading-tight">
+                      {selectedControl.fingerprint}
+                    </code>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button onClick={() => setSelectedControl(null)} className="px-6 py-2 bg-gray-900 text-white rounded-lg font-bold text-sm hover:bg-gray-800 transition shadow-lg shadow-gray-200">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

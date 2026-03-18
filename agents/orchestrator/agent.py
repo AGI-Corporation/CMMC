@@ -302,6 +302,21 @@ async def trigger_full_run(framework: str = "CMMC", db: AsyncSession = Depends(g
         from agents.fhir_agent.agent import _fhir
         agent_results["fhir"] = await _fhir.run_full_assessment(db, trigger="orchestrated")
 
+    # Granular data structure support: Extract controls from all result shapes
+    all_evaluated = []
+    for agent_key, res in agent_results.items():
+        if isinstance(res, list):
+            all_evaluated.extend([r.get("control_id") for r in res if r.get("control_id")])
+        elif isinstance(res, dict):
+            # CMMC agents (icam/devsecops)
+            all_evaluated.extend(res.get("controls_evaluated", []))
+            # HIPAA/FHIR/NIST specialist agents
+            if "findings" in res and isinstance(res["findings"], list):
+                all_evaluated.extend([f.get("control_id") for f in res["findings"] if f.get("control_id")])
+            # Extra granular findings (resource_validation)
+            if "resource_validation" in res:
+                agent_results[f"{agent_key}_granular"] = res["resource_validation"]
+
     # 2. Compute scores
     sprs = await _orchestrator.compute_sprs_score(db, framework=framework)
     scorecard = await _orchestrator.compute_zt_scorecard(db, framework=framework)
@@ -338,14 +353,7 @@ async def trigger_full_run(framework: str = "CMMC", db: AsyncSession = Depends(g
     # 4. Record Orchestrator Run
     run_id = str(uuid.uuid4())
 
-    controls_evaluated = []
-    for res in agent_results.values():
-        if isinstance(res, list):
-            controls_evaluated.extend([r["control_id"] for r in res])
-        elif isinstance(res, dict):
-            controls_evaluated.extend(res.get("controls_evaluated", []))
-            if "findings" in res and isinstance(res["findings"], list):
-                controls_evaluated.extend([f["control_id"] for f in res["findings"]])
+    controls_evaluated = list(set(all_evaluated))
 
     orchestrator_run = AgentRunRecord(
         id=run_id,

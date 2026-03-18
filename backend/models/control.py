@@ -76,6 +76,9 @@ class ControlResponse(BaseModel):
     notes: Optional[str] = None
     confidence: float = 0.0
     poam_required: bool = False
+    assessor: Optional[str] = None
+    assessment_date: Optional[datetime] = None
+    fingerprint: Optional[str] = None
 
 
 class ControlListResponse(BaseModel):

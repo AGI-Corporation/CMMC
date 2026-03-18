@@ -33,7 +33,10 @@ def map_control_to_response(c, assessment):
         evidence_count=len(assessment.evidence_ids) if assessment and isinstance(assessment.evidence_ids, list) else 0,
         notes=assessment.notes if assessment else None,
         confidence=assessment.confidence if assessment else 0.0,
-        poam_required=(assessment.poam_required == "true") if assessment else False
+        poam_required=(assessment.poam_required == "true") if assessment else False,
+        assessor=assessment.assessor if assessment else None,
+        assessment_date=assessment.assessment_date if assessment else None,
+        fingerprint=assessment.fingerprint if assessment else None
     )
 
 @router.get(

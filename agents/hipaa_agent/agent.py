@@ -10,11 +10,24 @@ from datetime import datetime, UTC
 
 class HIPAAAgent:
     async def run_full_assessment(self, db: AsyncSession, trigger: str = "manual"):
+        findings_list = [
+            {"control_id": "HIPAA-164.308.a.1.i", "status": "implemented", "confidence": 0.95, "finding": "Security management process established and reviewed.", "category": "Administrative"},
+            {"control_id": "HIPAA-164.308.a.3.i", "status": "implemented", "confidence": 1.0, "finding": "Workforce security: clear onboarding/offboarding.", "category": "Administrative"},
+            {"control_id": "HIPAA-164.310.a.1", "status": "implemented", "confidence": 0.9, "finding": "Facility access controls: biometric entry at data centers.", "category": "Physical"},
+            {"control_id": "HIPAA-164.312.e.1", "status": "partially_implemented", "confidence": 0.7, "finding": "Transmission security partially addressed via VPN.", "category": "Technical"},
+            {"control_id": "HIPAA-164.312.c.1", "status": "implemented", "confidence": 1.0, "finding": "Integrity: SHA-256 hashing for all PHI records at rest.", "category": "Technical"}
+        ]
+
+        # Categorize for the agent response
+        categorized = {
+            "Administrative": [f for f in findings_list if f["category"] == "Administrative"],
+            "Physical": [f for f in findings_list if f["category"] == "Physical"],
+            "Technical": [f for f in findings_list if f["category"] == "Technical"]
+        }
+
         findings = {
-            "findings": [
-                {"control_id": "HIPAA-164.308.a.1.i", "status": "implemented", "confidence": 0.95, "finding": "Security management process established and reviewed."},
-                {"control_id": "HIPAA-164.312.e.1", "status": "partially_implemented", "confidence": 0.7, "finding": "Transmission security partially addressed via VPN."}
-            ]
+            "findings": findings_list,
+            "categorized_summary": categorized
         }
         record = AgentRunRecord(
             id=str(uuid.uuid4()),

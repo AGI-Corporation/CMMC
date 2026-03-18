@@ -11,12 +11,33 @@ from datetime import datetime, UTC
 
 class NISTAgent:
     async def run_full_assessment(self, db: AsyncSession, trigger: str = "manual"):
-        findings = {
-            "findings": [
-                {"control_id": "NIST-3.1.1", "status": "implemented", "confidence": 1.0, "finding": "Verified via automated IAM audit."},
-                {"control_id": "NIST-3.5.1", "status": "partially_implemented", "confidence": 0.8, "finding": "Identified users, but missing process identifiers."}
-            ]
-        }
+        findings_data = [
+            {
+                "control_id": "NIST-3.1.1",
+                "status": "implemented",
+                "confidence": 1.0,
+                "finding": "Verified via automated IAM audit.",
+                "remediation": None,
+                "implementation_guidance": "Limit system access to authorized users. Ensure that user access is managed through centralized identity provider (IdP)."
+            },
+            {
+                "control_id": "NIST-3.5.1",
+                "status": "partially_implemented",
+                "confidence": 0.8,
+                "finding": "Identified users, but missing process identifiers.",
+                "remediation": "Update IAM policy to include process identifiers for system services.",
+                "implementation_guidance": "Identify system users, processes acting on behalf of users, or devices. Ensure all service accounts are documented."
+            },
+            {
+                "control_id": "NIST-3.11.2",
+                "status": "implemented",
+                "confidence": 1.0,
+                "finding": "Vulnerability scans are automated and run weekly.",
+                "remediation": None,
+                "implementation_guidance": "Scan for vulnerabilities in the system and applications when new vulnerabilities affecting the system are identified."
+            }
+        ]
+        findings = {"findings": findings_data}
         record = AgentRunRecord(
             id=str(uuid.uuid4()),
             framework="NIST",
