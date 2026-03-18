@@ -1,3 +1,0 @@
-## 2025-03-18 - Optimized "Latest per Group" Query Pattern
-**Learning:** The application frequently retrieves the most recent assessment for each compliance control. This "latest per group" pattern was implemented using a subquery and join in multiple places. By adding a composite index on `(control_id, assessment_date)`, we significantly optimized these lookups. Benchmark showed a reduction in query time from ~0.0098s to ~0.0060s (~39% improvement).
-**Action:** Always use composite indexes for columns involved in GROUP BY / MAX() patterns. Consolidate such performance-critical queries into shared database helpers to ensure consistent optimization across the codebase.
