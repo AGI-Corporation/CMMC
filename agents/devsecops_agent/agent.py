@@ -36,17 +36,32 @@ class DevSecOpsAgent:
     def scan_container_image(self, image_name: str, image_tag: str = "latest",
                               base_image: Optional[str] = None) -> Dict[str, Any]:
         """Simulate CVE scan. Production: Trivy/Grype. Maps to NIST 800-190, CMMC SI.1.210."""
+        # Detailed CVE-to-Control mapping with severity distribution
         cves = [
-            {"cve_id": "CVE-2024-1234", "severity": "high", "package": "openssl",
-             "version": "3.0.1", "fixed_in": "3.0.2", "cmmc_controls": ["SI.1.210", "SI.2.214"]}
+            {"cve_id": "CVE-2024-1234", "severity": "critical", "package": "openssl",
+             "version": "3.0.1", "fixed_in": "3.0.2", "cmmc_controls": ["SI.1.210", "SI.2.214"]},
+            {"cve_id": "CVE-2024-5678", "severity": "high", "package": "libc6",
+             "version": "2.31", "fixed_in": "2.32", "cmmc_controls": ["SI.1.210"]},
+            {"cve_id": "CVE-2024-9012", "severity": "medium", "package": "python3-pip",
+             "version": "20.0.1", "fixed_in": "20.0.2", "cmmc_controls": ["SI.1.210"]}
         ] if "vulnerable" in image_name else []
+
+        critical = [c for c in cves if c["severity"] == "critical"]
+        high = [c for c in cves if c["severity"] == "high"]
+        medium = [c for c in cves if c["severity"] == "medium"]
+
         return {
             "image": f"{image_name}:{image_tag}",
             "base_image": base_image,
             "base_image_approved": base_image in self.APPROVED_BASE_IMAGES,
-            "overall_risk": "pass" if not cves else "high",
+            "overall_risk": "pass" if not cves else "critical" if critical else "high",
             "cve_findings": cves,
-            "critical_count": 0, "high_count": len(cves),
+            "severity_distribution": {
+                "critical": len(critical),
+                "high": len(high),
+                "medium": len(medium),
+                "low": 0
+            },
             "evidence_id": str(uuid.uuid4()),
             "scanned_at": datetime.now(UTC).isoformat(),
             "cmmc_controls": ["SI.1.210", "SI.2.214", "CM.2.061", "CM.3.068"],

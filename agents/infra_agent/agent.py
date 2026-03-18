@@ -18,14 +18,40 @@ class InfraAgent:
 
     def audit_network_segmentation(self) -> Dict[str, Any]:
         """Audit micro-segmentation and boundary protection. Maps to SC.1.175, SC.1.176."""
+        # Granular zone-based findings
+        zone_findings = [
+            {
+                "zone": "DMZ",
+                "status": "implemented",
+                "confidence": 1.0,
+                "controls": ["SC.1.175"],
+                "finding": "External traffic routed through WAF and dedicated IGW; ingress restricted to 443."
+            },
+            {
+                "zone": "CUI-LAN",
+                "status": "implemented",
+                "confidence": 0.95,
+                "controls": ["SC.1.176"],
+                "finding": "Micro-segmentation enforced via zero-trust network access (ZTNA) and east-west VPC peering restrictions."
+            },
+            {
+                "zone": "Dev-VPC",
+                "status": "partially_implemented",
+                "confidence": 0.6,
+                "controls": ["SC.1.176"],
+                "finding": "VPC isolation exists, but permissive security groups allow cross-zone SSH for maintenance."
+            }
+        ]
+
         findings = [
-            {"control_id": "SC.1.175", "status": "implemented", "confidence": 1.0, "finding": "Boundary protection enforced via cloud security groups."},
+            {"control_id": "SC.1.175", "status": "implemented", "confidence": 1.0, "finding": "Boundary protection enforced via cloud security groups across all zones."},
             {"control_id": "SC.1.176", "status": "partially_implemented", "confidence": 0.8, "finding": "Network segmentation implemented for CUI environment, but missing for dev environment."}
         ]
         return {
             "agent": "infra",
             "audit_type": "Network Segmentation",
             "findings": findings,
+            "zone_audits": zone_findings,
             "overall_confidence": 0.9,
             "evidence_id": str(uuid.uuid4()),
             "timestamp": datetime.now(UTC).isoformat(),

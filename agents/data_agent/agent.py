@@ -18,14 +18,40 @@ class DataAgent:
 
     def audit_data_protection(self) -> Dict[str, Any]:
         """Audit data encryption and media protection. Maps to MP.1.118, SC.3.177."""
+        # Granular classification tier findings
+        classification_audit = [
+            {
+                "tier": "CUI",
+                "status": "implemented",
+                "confidence": 1.0,
+                "encryption": "AES-256-GCM",
+                "finding": "All CUI data is classified, labeled, and encrypted at rest on FIPS 140-2 validated modules."
+            },
+            {
+                "tier": "Public",
+                "status": "implemented",
+                "confidence": 1.0,
+                "encryption": "TLS 1.3",
+                "finding": "Public website assets are served over encrypted channels, though encryption at rest is optional for non-sensitive assets."
+            },
+            {
+                "tier": "Financial",
+                "status": "partially_implemented",
+                "confidence": 0.75,
+                "encryption": "TDE",
+                "finding": "Database Transparent Data Encryption (TDE) active, but field-level encryption for PII is still in rollout."
+            }
+        ]
+
         findings = [
-            {"control_id": "MP.1.118", "status": "implemented", "confidence": 1.0, "finding": "All system media containing CUI is encrypted at rest."},
+            {"control_id": "MP.1.118", "status": "implemented", "confidence": 1.0, "finding": "All system media containing CUI is encrypted at rest using AES-256."},
             {"control_id": "SC.3.177", "status": "partially_implemented", "confidence": 0.7, "finding": "Encryption in transit enforced for external traffic, but not all internal service-to-service traffic."}
         ]
         return {
             "agent": "data",
             "audit_type": "Data Protection",
             "findings": findings,
+            "classification_tiers": classification_audit,
             "overall_confidence": 0.85,
             "evidence_id": str(uuid.uuid4()),
             "timestamp": datetime.now(UTC).isoformat(),
