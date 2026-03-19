@@ -17,6 +17,12 @@ This platform is a comprehensive compliance management system designed for high-
 
 ## Core Capabilities
 
+### 🧠 Sentient Core (OAGD Protocol)
+The platform features a real-time neural simulation of the agent fleet's cognitive state. Using the **Open Agent Graph Discovery (OAGD)** protocol, the UI visualizes:
+- **Neuron Activity**: Real-time monitoring of agent tasking and cognitive load.
+- **Active Pathways**: Visualizing how agents collaborate to solve complex compliance mappings.
+- **Neural Integrity**: Continuous OML validation of the agent fleet's internal state.
+
 ### 🤖 Intelligent Agent Fleet (NANDA Registry)
 A decentralized, verified registry of specialist AI agents:
 - **Orchestrator**: Manages cross-agent assessment cycles and RAG evaluation.
@@ -29,6 +35,12 @@ The platform incorporates the latest Mistral RAG evaluation protocol to ensure A
 - **Contextually Relevant**: Ensuring the right controls are applied to the right systems.
 - **Grounded**: Verifying that assessment findings are backed by stored evidence.
 - **High Fidelity**: Providing Answer Relevance scores for audit-ready documentation.
+
+### 🤝 Collaborative Auditing (Human + AI)
+The "Evidence Review" workflow enables a hybrid assessment model:
+- **AI Feedback**: Mistral provides constructive, 360-degree feedback on evidence quality.
+- **Status Tracking**: Seamless transition from agent-discovered findings to human-verified implementation status.
+- **Audit History**: Every review decision is cryptographically anchored to the OML integrity feed.
 
 ### 🛡️ Provenance & Integrity (Sentient OML)
 Every AI assessment finding and report is cryptographically fingerprinted using Sentient OML-inspired protocols. The "Integrity Feed" provides a verifiable trail of:
@@ -50,7 +62,7 @@ Every AI assessment finding and report is cryptographically fingerprinted using 
 |-- backend/
 |   |-- db/                  # Async SQLite/SQLAlchemy persistent storage
 |   |-- models/              # Pydantic models for Controls, Evidence, Assessments
-|   `-- routers/             # REST API endpoints for all platform features
+|   `-- routers/             # REST API, NANDA registry, & OAGD simulation endpoints
 |-- frontend/
 |   |-- src/
 |   |   |-- components/      # React components (Dashboard, Advisor, Explorer)
