@@ -6,7 +6,7 @@ import os
 import json
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select
+from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select, Index, func
 from datetime import datetime, UTC
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cmmc.db")
@@ -72,6 +72,11 @@ class AssessmentRecord(Base):
     next_review = Column(DateTime)
     poam_required = Column(String, default="false")
 
+    # Composite index for faster "latest assessment per control" queries
+    __table_args__ = (
+        Index("idx_control_date", "control_id", "assessment_date"),
+    )
+
 
 class AgentRunRecord(Base):
     __tablename__ = "agent_runs"
@@ -126,3 +131,34 @@ async def get_db():
             raise
         finally:
             await session.close()
+
+
+async def get_latest_assessments(session: AsyncSession, control_ids: list[str] = None):
+    """
+    Centralized helper to fetch the latest assessment record for each control.
+    Optimized via idx_control_date composite index.
+    """
+    sub_q = (
+        select(
+            AssessmentRecord.control_id,
+            func.max(AssessmentRecord.assessment_date).label("max_date")
+        )
+        .group_by(AssessmentRecord.control_id)
+    )
+
+    if control_ids:
+        sub_q = sub_q.where(AssessmentRecord.control_id.in_(control_ids))
+
+    sub_q = sub_q.subquery()
+
+    query = (
+        select(AssessmentRecord)
+        .join(
+            sub_q,
+            (AssessmentRecord.control_id == sub_q.c.control_id) &
+            (AssessmentRecord.assessment_date == sub_q.c.max_date)
+        )
+    )
+
+    result = await session.execute(query)
+    return {a.control_id: a for a in result.scalars().all()}
