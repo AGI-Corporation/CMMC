@@ -145,10 +145,18 @@ const Dashboard: React.FC = () => {
 
           {/* ZT Scorecard */}
           <div>
-            <h2 className="text-xl font-bold text-gray-800 mb-4">Zero Trust Maturity Index</h2>
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-800">Zero Trust Maturity Index</h2>
+                {ztScorecard.some(p => p.confidence_avg < 0.7) && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-700 px-3 py-1 rounded-full text-[10px] font-black uppercase flex items-center gap-2 animate-pulse">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        Low Confidence Signals Detected
+                    </div>
+                )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {ztScorecard.map(pillar => (
-                <div key={pillar.pillar} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                <div key={pillar.pillar} className={`bg-white p-4 rounded-lg shadow-sm border ${pillar.confidence_avg < 0.7 ? 'border-amber-200 bg-amber-50/20' : 'border-gray-200'}`}>
                   <div className="flex justify-between">
                     <h4 className="font-bold text-gray-700">{pillar.pillar}</h4>
                     <span className="text-xs text-gray-400 uppercase">Confidence: {Math.round(pillar.confidence_avg * 100)}%</span>

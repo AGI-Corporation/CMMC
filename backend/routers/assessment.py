@@ -255,10 +255,25 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
     elif run.agent_type in ["infra", "data", "nist", "hipaa", "fhir"]:
         agent_findings = findings.get("findings", [])
         evidence_id = findings.get("evidence_id")
+        resource_v = findings.get("resource_validation", [])
+
         for f in agent_findings:
+            # Construct granular notes
+            notes_parts = [f"Finding: {f['finding']}"]
+            if f.get("category"): notes_parts.append(f"Category: {f['category']}")
+            if f.get("remediation"): notes_parts.append(f"Remediation: {f['remediation']}")
+            if f.get("implementation_guidance"): notes_parts.append(f"Guidance: {f['implementation_guidance']}")
+
+            # Add resource validation errors if any
+            if resource_v:
+                errors = [rv.get("errors", []) for rv in resource_v if rv.get("errors")]
+                if errors:
+                    flat_errors = [item for sublist in errors for item in sublist]
+                    notes_parts.append(f"Validation Issues: {', '.join(flat_errors)}")
+
             db.add(create_assessment(
                 f["control_id"], f["status"], f["confidence"],
-                f"Finding: {f['finding']}", [evidence_id] if evidence_id else []
+                " | ".join(notes_parts), [evidence_id] if evidence_id else []
             ))
             promoted_count += 1
 

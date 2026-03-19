@@ -182,8 +182,18 @@ const ControlExplorer: React.FC<{ framework?: string }> = ({ framework: initialF
               </div>
               {selectedControl.notes && (
                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                  <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-2">Assessor Notes</h4>
-                  <p className="text-sm text-blue-900 leading-relaxed italic">"{selectedControl.notes}"</p>
+                  <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-2">Assessor Findings & Guidance</h4>
+                  <div className="space-y-2">
+                    {selectedControl.notes.split(' | ').map((note, i) => (
+                      <p key={i} className="text-sm text-blue-900 leading-relaxed">
+                        {note.includes(': ') ? (
+                          <>
+                            <span className="font-bold">{note.split(': ')[0]}:</span> {note.split(': ').slice(1).join(': ')}
+                          </>
+                        ) : note}
+                      </p>
+                    ))}
+                  </div>
                 </div>
               )}
 
