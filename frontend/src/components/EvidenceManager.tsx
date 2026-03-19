@@ -9,27 +9,48 @@ interface Evidence {
   evidence_type: string;
   source_system: string;
   created_at: string;
+  metadata?: any;
 }
 
 const EvidenceManager: React.FC = () => {
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewNotes, setReviewNotes] = useState('');
+
+  const fetchEvidence = async () => {
+    setLoading(true);
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    try {
+      const res = await fetch(`${baseUrl}/api/evidence/`);
+      const data = await res.json();
+      setEvidence(data.evidence || []);
+    } catch (error) {
+      console.error('Error fetching evidence:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchEvidence = async () => {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      try {
-        const res = await fetch(`${baseUrl}/api/evidence/`);
-        const data = await res.json();
-        setEvidence(data.evidence || []);
-      } catch (error) {
-        console.error('Error fetching evidence:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchEvidence();
   }, []);
+
+  const handleReview = async (id: string, status: string) => {
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    try {
+      await fetch(`${baseUrl}/api/evidence/${id}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewer_notes: reviewNotes, status })
+      });
+      setReviewingId(null);
+      setReviewNotes('');
+      fetchEvidence();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   return (
     <div className="p-8">
@@ -67,14 +88,58 @@ const EvidenceManager: React.FC = () => {
                   <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider">{ev.zt_pillar}</span>
                 </td>
                 <td className="px-6 py-4 text-gray-500 text-xs">{new Date(ev.created_at).toLocaleString()}</td>
-                <td className="px-6 py-4 font-mono text-[10px] text-gray-400">
-                  {ev.id.substring(0, 16)}...
+                <td className="px-6 py-4">
+                    <button
+                        onClick={() => setReviewingId(ev.id)}
+                        className="text-[10px] font-bold text-blue-600 hover:text-blue-800 uppercase tracking-tighter"
+                    >
+                        Review
+                    </button>
+                    {ev.metadata?.review_status && (
+                        <div className={`mt-1 text-[8px] font-black uppercase ${ev.metadata.review_status === 'approved' ? 'text-green-600' : 'text-amber-600'}`}>
+                            {ev.metadata.review_status}
+                        </div>
+                    )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {reviewingId && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center p-8 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">Evidence Review</h3>
+            <textarea
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm h-32 outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+              placeholder="Add your review notes here..."
+              value={reviewNotes}
+              onChange={(e) => setReviewNotes(e.target.value)}
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => handleReview(reviewingId, 'approved')}
+                className="bg-green-600 text-white py-2 rounded-lg font-bold hover:bg-green-700 transition"
+              >
+                Approve
+              </button>
+              <button
+                onClick={() => handleReview(reviewingId, 'needs_work')}
+                className="bg-amber-500 text-white py-2 rounded-lg font-bold hover:bg-amber-600 transition"
+              >
+                Needs Work
+              </button>
+            </div>
+            <button
+                onClick={() => setReviewingId(null)}
+                className="w-full mt-4 text-gray-400 text-xs font-bold uppercase"
+            >
+                Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

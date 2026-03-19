@@ -15,8 +15,20 @@ from datetime import datetime, UTC
 
 from backend.db.database import get_db, EvidenceRecord
 from backend.models.evidence import EvidenceCreate, EvidenceResponse, EvidenceListResponse
+from agents.mistral_agent.agent import agent as mistral_agent
+from pydantic import BaseModel
 
 router = APIRouter()
+
+class EvidenceReviewRequest(BaseModel):
+    reviewer_notes: str
+    status: str  # approved/rejected/needs_work
+
+class EvidenceReviewResponse(BaseModel):
+    evidence_id: str
+    reviewer_notes: str
+    ai_feedback: str
+    status: str
 
 
 @router.post("/", response_model=EvidenceResponse,
@@ -129,6 +141,40 @@ async def get_evidence(
         review_cycle_days=record.review_cycle_days,
         metadata=record.metadata_ or {},
         created_at=record.created_at,
+    )
+
+
+@router.post("/{evidence_id}/review", response_model=EvidenceReviewResponse, summary="Review evidence artifact with AI feedback")
+async def review_evidence(
+    evidence_id: str,
+    review: EvidenceReviewRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Review an artifact and get automated AI feedback from Mistral."""
+    result = await db.execute(
+        select(EvidenceRecord).where(EvidenceRecord.id == evidence_id)
+    )
+    record = result.scalar_one_or_none()
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Evidence {evidence_id} not found")
+
+    # Call Mistral for feedback
+    context = f"Evidence Title: {record.title}\nDescription: {record.description}\nControl ID: {record.control_id}\nReviewer Status: {review.status}\nReviewer Notes: {review.reviewer_notes}"
+    ai_feedback = await mistral_agent.answer_compliance_question(
+        "Evaluate this evidence artifact and the reviewer's comments. Provide 2-3 bullet points of constructive feedback or next steps.",
+        context=context
+    )
+
+    # Update record
+    record.reviewer = "Human + Mistral"
+    record.metadata_ = {**(record.metadata_ or {}), "ai_feedback": ai_feedback, "review_status": review.status, "reviewer_notes": review.reviewer_notes}
+    await db.commit()
+
+    return EvidenceReviewResponse(
+        evidence_id=evidence_id,
+        reviewer_notes=review.reviewer_notes,
+        ai_feedback=ai_feedback,
+        status=review.status
     )
 
 
