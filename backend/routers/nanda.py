@@ -92,6 +92,26 @@ def seed_registry():
             capabilities=["FHIR Privacy & Security Assessment", "Interoperability Audit"],
             endpoint="/api/agents/fhir",
             integration_score=0.82
+        ),
+        AgentFacts(
+            agent_id="ops-01",
+            name="Operational Security Agent",
+            version="1.0.0",
+            trust_level=TrustLevel.VERIFIED,
+            protocols=[Protocol.HTTPS],
+            capabilities=["Incident Response Audit", "SIEM Telemetry Validation", "Operations Pillar"],
+            endpoint="/api/agents/ops",
+            integration_score=0.91
+        ),
+        AgentFacts(
+            agent_id="gov-01",
+            name="Governance & Risk Agent",
+            version="1.0.0",
+            trust_level=TrustLevel.VERIFIED,
+            protocols=[Protocol.HTTPS, Protocol.MCP],
+            capabilities=["POA&M Management", "Policy Verification", "Risk Assessment", "Governance Pillar"],
+            endpoint="/api/agents/governance",
+            integration_score=0.96
         )
     ]
     for a in agents:

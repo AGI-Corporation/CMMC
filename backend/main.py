@@ -24,6 +24,8 @@ from agents.data_agent import agent as data
 from agents.nist_agent import agent as nist
 from agents.hipaa_agent import agent as hipaa
 from agents.fhir_agent import agent as fhir
+from agents.ops_agent import agent as ops
+from agents.governance_agent import agent as governance
 
 from backend.db.database import init_db
 from dotenv import load_dotenv
@@ -84,6 +86,8 @@ app.include_router(data.router, prefix="/api/agents/data", tags=["Data Agent"])
 app.include_router(nist.router, prefix="/api/agents/nist", tags=["NIST Agent"])
 app.include_router(hipaa.router, prefix="/api/agents/hipaa", tags=["HIPAA Agent"])
 app.include_router(fhir.router, prefix="/api/agents/fhir", tags=["FHIR Agent"])
+app.include_router(ops.router, prefix="/api/agents/ops", tags=["Operational Security Agent"])
+app.include_router(governance.router, prefix="/api/agents/governance", tags=["Governance & Risk Agent"])
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────

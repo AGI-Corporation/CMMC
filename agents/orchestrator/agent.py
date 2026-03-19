@@ -23,6 +23,8 @@ from agents.icam_agent.agent import _icam
 from agents.devsecops_agent.agent import _dso
 from agents.infra_agent.agent import _infra
 from agents.data_agent.agent import _data
+from agents.ops_agent.agent import _ops
+from agents.governance_agent.agent import _gov
 
 class AgentType(str, Enum):
     ICAM = "icam"                     # Identity/Credential/Access Mgmt
@@ -292,6 +294,8 @@ async def trigger_full_run(framework: str = "CMMC", db: AsyncSession = Depends(g
         agent_results["devsecops"] = await _dso.run_full_assessment(db, trigger="orchestrated")
         agent_results["infra"] = await _infra.run_full_assessment(db, trigger="orchestrated")
         agent_results["data"] = await _data.run_full_assessment(db, trigger="orchestrated")
+        agent_results["ops"] = await _ops.run_full_assessment(db, trigger="orchestrated")
+        agent_results["governance"] = await _gov.run_full_assessment(db, trigger="orchestrated")
     elif framework == "NIST":
         from agents.nist_agent.agent import _nist
         agent_results["nist"] = await _nist.run_full_assessment(db, trigger="orchestrated")
