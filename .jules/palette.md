@@ -1,0 +1,3 @@
+## 2026-05-21 - Visual Scannability in Text Reports
+**Learning:** Text-based reports (like Markdown SSPs) can be significantly enhanced for human readability by using Unicode progress bars (`█`, `░`) and status emojis. This provides immediate visual feedback without requiring a full graphical UI. Star ratings (⭐) are effective for translating numerical confidence/risk scores into a familiar, high-level quality indicator.
+**Action:** Use `int(confidence * 5 + 0.5)` for star ratings to ensure 50% maps correctly to 3 stars, avoiding banker's rounding. Standardize status emojis (✅, 🟡, 📝, 🛑, ⚪) across all report types for consistency.
