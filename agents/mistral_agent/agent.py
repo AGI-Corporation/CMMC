@@ -283,6 +283,16 @@ class MistralComplianceAgent:
             )
             return response.choices[0].message.content
 
+    async def generate_remediation_script(self, control_id: str, gap_summary: str, environment: str = "linux/cloud") -> str:
+        """Generate a technical remediation script (Bash/Terraform) using Mistral."""
+        if not self.client:
+            return f"#!/bin/bash\n# Mock remediation script for {control_id}\n# Env: {environment}\necho 'Fixing {gap_summary}...'\n# [API Key Missing]"
+
+        system = f"You are a DevSecOps engineer. Generate a technical remediation script (Bash or Terraform) to address the compliance gap for {control_id}."
+        user = f"Gap: {gap_summary}\nEnvironment: {environment}\nGenerate the script."
+
+        return await self._chat(system, user)
+
     async def evaluate_rag(self, query: str, retrieved_context: str, generated_answer: str) -> Optional[RAGEvaluation]:
         """Evaluate RAG performance using Mistral as a Judge (Structured Outputs)."""
         if not self.client or not self.use_mistral_client:
@@ -343,6 +353,11 @@ class QuestionRequest(BaseModel):
     question: str
     context: str = ""
 
+class RemediationRequest(BaseModel):
+    control_id: str
+    gap_summary: str
+    environment: str = "linux/cloud"
+
 
 @router.post("/gap-analysis", summary="Analyze CMMC control gap with Mistral AI")
 async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_db)):
@@ -377,5 +392,15 @@ async def ask_question(req: QuestionRequest):
     try:
         answer = await agent.answer_compliance_question(req.question, req.context)
         return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/remediation-script", summary="Generate AI remediation script")
+async def get_remediation_script(req: RemediationRequest):
+    """Use Mistral to generate a technical fix script (Bash/Terraform) for a control gap."""
+    try:
+        script = await agent.generate_remediation_script(req.control_id, req.gap_summary, req.environment)
+        return {"control_id": req.control_id, "script": script, "model": MISTRAL_MODEL}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

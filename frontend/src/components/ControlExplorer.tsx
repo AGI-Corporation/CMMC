@@ -28,6 +28,9 @@ const ControlExplorer: React.FC<{ framework?: string }> = ({ framework: initialF
   const [filter, setFilter] = useState('');
   const [domainFilter, setDomainFilter] = useState('');
   const [selectedControl, setSelectedControl] = useState<ControlResponse | null>(null);
+  const [mappings, setMappings] = useState<any[]>([]);
+  const [remediationScript, setRemediationScript] = useState<string | null>(null);
+  const [isGeneratingScript, setIsGeneratingScript] = useState(false);
 
   const fetchControls = async () => {
     setLoading(true);
@@ -46,6 +49,41 @@ const ControlExplorer: React.FC<{ framework?: string }> = ({ framework: initialF
   useEffect(() => {
     fetchControls();
   }, [framework]);
+
+  useEffect(() => {
+    if (selectedControl) {
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        fetch(`${baseUrl}/api/assessment/mapping/${selectedControl.control.id}`)
+            .then(res => res.json())
+            .then(data => setMappings(data.mapped_controls || []))
+            .catch(err => console.error(err));
+    } else {
+        setMappings([]);
+        setRemediationScript(null);
+    }
+  }, [selectedControl]);
+
+  const generateRemediation = async () => {
+    if (!selectedControl) return;
+    setIsGeneratingScript(true);
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    try {
+        const res = await fetch(`${baseUrl}/api/agents/mistral/remediation-script`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                control_id: selectedControl.control.id,
+                gap_summary: selectedControl.notes || "Control is not fully implemented."
+            })
+        });
+        const data = await res.json();
+        setRemediationScript(data.script);
+    } catch (err) {
+        console.error(err);
+    } finally {
+        setIsGeneratingScript(false);
+    }
+  };
 
   const filtered = controls.filter(c =>
     (c.control.id.toLowerCase().includes(filter.toLowerCase()) ||
@@ -197,6 +235,32 @@ const ControlExplorer: React.FC<{ framework?: string }> = ({ framework: initialF
                 </div>
               )}
 
+              {mappings.length > 0 && (
+                <div>
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <svg className="w-3 h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                    Cross-Framework Mappings
+                  </h4>
+                  <div className="space-y-2">
+                    {mappings.map(m => (
+                      <div key={m.id} className="flex items-center justify-between bg-blue-50/50 border border-blue-100 rounded-lg px-4 py-2">
+                        <div>
+                          <span className="text-[10px] font-black text-blue-600 mr-2">{m.framework}</span>
+                          <span className="text-xs font-bold text-gray-700">{m.id}</span>
+                          <p className="text-[10px] text-gray-500 truncate w-48">{m.title}</p>
+                        </div>
+                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
+                          m.status === 'implemented' ? 'bg-green-100 text-green-700' :
+                          m.status === 'partially_implemented' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-200 text-gray-500'
+                        }`}>
+                          {m.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 space-y-3">
                 <div className="flex justify-between items-center text-[10px] font-bold">
                   <span className="text-gray-400 uppercase tracking-widest">Assessor</span>
@@ -216,11 +280,30 @@ const ControlExplorer: React.FC<{ framework?: string }> = ({ framework: initialF
                 )}
               </div>
             </div>
-            <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+              {selectedControl.implementation_status !== 'implemented' ? (
+                <button
+                  onClick={generateRemediation}
+                  disabled={isGeneratingScript}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black uppercase shadow-lg shadow-blue-200 hover:bg-blue-700 transition flex items-center gap-2"
+                >
+                  {isGeneratingScript ? 'Generating...' : 'AI Remediation Script'}
+                </button>
+              ) : <div />}
               <button onClick={() => setSelectedControl(null)} className="px-6 py-2 bg-gray-900 text-white rounded-lg font-bold text-sm hover:bg-gray-800 transition shadow-lg shadow-gray-200">
                 Close
               </button>
             </div>
+
+            {remediationScript && (
+              <div className="p-6 bg-slate-900 text-blue-400 font-mono text-xs overflow-x-auto max-h-48 border-t border-slate-800">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[10px] font-black text-slate-500 uppercase">AI-Generated Remediation Code</span>
+                  <button onClick={() => setRemediationScript(null)} className="text-slate-500 hover:text-white">✕</button>
+                </div>
+                <pre>{remediationScript}</pre>
+              </div>
+            )}
           </div>
         </div>
       )}

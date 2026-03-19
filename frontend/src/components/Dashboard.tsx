@@ -35,21 +35,25 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isRunningAssessment, setIsRunningAssessment] = useState(false);
   const [framework, setFramework] = useState('CMMC');
+  const [readinessMatrix, setReadinessMatrix] = useState<any[]>([]);
 
   const fetchData = async () => {
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     try {
-      const [sumRes, ztRes, reportRes] = await Promise.all([
+      const [sumRes, ztRes, reportRes, matrixRes] = await Promise.all([
         fetch(`${baseUrl}/api/assessment/dashboard?framework=${framework}`),
         fetch(`${baseUrl}/api/orchestrator/scorecard?framework=${framework}`),
-        fetch(`${baseUrl}/api/orchestrator/report?framework=${framework}`)
+        fetch(`${baseUrl}/api/orchestrator/report?framework=${framework}`),
+        fetch(`${baseUrl}/api/assessment/readiness-matrix`)
       ]);
       const sumData = await sumRes.json();
       const ztData = await ztRes.json();
       const reportData = await reportRes.json();
+      const matrixData = await matrixRes.json();
       setSummary(sumData);
       setZtScorecard(ztData.scorecard);
       setRecentRuns(reportData.agent_runs || []);
+      setReadinessMatrix(matrixData || []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -140,6 +144,25 @@ const Dashboard: React.FC = () => {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* Readiness Matrix */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h2 className="text-xl font-bold text-gray-800 mb-6">Universal Readiness Matrix</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {readinessMatrix.map(m => (
+                    <div key={m.framework} className="bg-gray-50 rounded-xl p-4 border border-gray-100 flex flex-col items-center text-center">
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{m.framework}</span>
+                        <div className="text-2xl font-black text-gray-900 mb-2">{m.percentage}%</div>
+                        <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
+                            <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${m.percentage}%` }}></div>
+                        </div>
+                        <div className="text-[9px] text-gray-500 font-bold uppercase">
+                            {m.implemented}/{m.total} Controls
+                        </div>
+                    </div>
+                ))}
             </div>
           </div>
 

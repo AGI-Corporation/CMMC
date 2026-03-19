@@ -199,6 +199,81 @@ async def calculate_sprs_score(
         assessment_date=datetime.now(UTC).date().isoformat()
     )
 
+@router.get("/mapping/{control_id}", summary="Get cross-framework control mappings")
+async def get_control_mappings(control_id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve controls from other frameworks mapped to this control."""
+    query = select(ControlRecord).where(ControlRecord.id == control_id)
+    result = await db.execute(query)
+    base_ctrl = result.scalar_one_or_none()
+
+    if not base_ctrl:
+        raise HTTPException(status_code=404, detail=f"Control {control_id} not found")
+
+    mappings = []
+    # If it's a CMMC control, look for NIST mapping
+    if base_ctrl.framework == "CMMC" and base_ctrl.nist_mapping:
+        nist_q = select(ControlRecord).where(ControlRecord.nist_mapping == base_ctrl.nist_mapping).where(ControlRecord.framework == "NIST")
+        nist_res = await db.execute(nist_q)
+        mappings.extend(nist_res.scalars().all())
+
+    # If it's a NIST control, look for CMMC controls mapped to it
+    elif base_ctrl.framework == "NIST" and base_ctrl.nist_mapping:
+        cmmc_q = select(ControlRecord).where(ControlRecord.nist_mapping == base_ctrl.nist_mapping).where(ControlRecord.framework == "CMMC")
+        cmmc_res = await db.execute(cmmc_q)
+        mappings.extend(cmmc_res.scalars().all())
+
+    # Get latest assessments for mapped controls
+    assessments_map = await get_latest_assessments(db)
+
+    return {
+        "base_control": base_ctrl.id,
+        "framework": base_ctrl.framework,
+        "nist_mapping": base_ctrl.nist_mapping,
+        "mapped_controls": [
+            {
+                "id": m.id,
+                "framework": m.framework,
+                "title": m.title,
+                "status": assessments_map.get(m.id).status if assessments_map.get(m.id) else "not_started"
+            }
+            for m in mappings
+        ]
+    }
+
+
+@router.get("/readiness-matrix", summary="Get multi-framework readiness matrix")
+async def get_readiness_matrix(db: AsyncSession = Depends(get_db)):
+    """Compare implementation status across all active frameworks."""
+    frameworks = ["CMMC", "NIST", "HIPAA", "FHIR"]
+    matrix = []
+
+    assessments_map = await get_latest_assessments(db)
+
+    for fw in frameworks:
+        result = await db.execute(select(ControlRecord).where(ControlRecord.framework == fw))
+        controls = result.scalars().all()
+
+        total = len(controls)
+        implemented = 0
+        partial = 0
+        for c in controls:
+            ass = assessments_map.get(c.id)
+            if ass:
+                if ass.status == "implemented": implemented += 1
+                elif ass.status in ["partially_implemented", "partial"]: partial += 1
+
+        pct = (implemented / total * 100) if total > 0 else 0
+        matrix.append({
+            "framework": fw,
+            "total": total,
+            "implemented": implemented,
+            "partial": partial,
+            "percentage": round(pct, 1)
+        })
+
+    return matrix
+
+
 @router.post("/promote/{run_id}", summary="Promote agent findings to official assessment records")
 async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
     """Convert an agent execution run into official assessment records."""

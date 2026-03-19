@@ -31,6 +31,7 @@ class AgentFacts(BaseModel):
     attestation_key: Optional[str] = None
     last_verified: datetime = Field(default_factory=lambda: datetime.now(UTC))
     endpoint: str
+    integration_score: float = 1.0  # 0.0 to 1.0
 
 class AgentRegistryResponse(BaseModel):
     agents: List[AgentFacts]

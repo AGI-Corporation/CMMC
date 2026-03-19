@@ -20,7 +20,8 @@ def seed_registry():
             trust_level=TrustLevel.VERIFIED,
             protocols=[Protocol.HTTPS, Protocol.MCP],
             capabilities=["Access Control", "Identification & Authentication", "User Pillar"],
-            endpoint="/api/agents/icam"
+            endpoint="/api/agents/icam",
+            integration_score=0.95
         ),
         AgentFacts(
             agent_id="devsecops-01",
@@ -29,7 +30,8 @@ def seed_registry():
             trust_level=TrustLevel.VERIFIED,
             protocols=[Protocol.HTTPS, Protocol.MCP],
             capabilities=["Configuration Management", "System & Information Integrity", "Application Pillar"],
-            endpoint="/api/agents/devsecops"
+            endpoint="/api/agents/devsecops",
+            integration_score=0.98
         ),
         AgentFacts(
             agent_id="infra-01",
@@ -38,7 +40,8 @@ def seed_registry():
             trust_level=TrustLevel.TRUSTED,
             protocols=[Protocol.HTTPS],
             capabilities=["System & Communications Protection", "Network Pillar"],
-            endpoint="/api/agents/infra"
+            endpoint="/api/agents/infra",
+            integration_score=0.85
         ),
         AgentFacts(
             agent_id="data-01",
@@ -47,7 +50,8 @@ def seed_registry():
             trust_level=TrustLevel.TRUSTED,
             protocols=[Protocol.HTTPS],
             capabilities=["Media Protection", "Data Pillar"],
-            endpoint="/api/agents/data"
+            endpoint="/api/agents/data",
+            integration_score=0.88
         ),
         AgentFacts(
             agent_id="mistral-01",
@@ -56,7 +60,8 @@ def seed_registry():
             trust_level=TrustLevel.VERIFIED,
             protocols=[Protocol.HTTPS, Protocol.MCP],
             capabilities=["Compliance Analysis", "Remediation Planning", "All ZT Pillars", "RAG Evaluation"],
-            endpoint="/api/agents/mistral"
+            endpoint="/api/agents/mistral",
+            integration_score=1.0
         ),
         AgentFacts(
             agent_id="nist-01",
@@ -65,7 +70,8 @@ def seed_registry():
             trust_level=TrustLevel.VERIFIED,
             protocols=[Protocol.HTTPS],
             capabilities=["NIST 800-171 Assessment", "Security Controls Audit"],
-            endpoint="/api/agents/nist"
+            endpoint="/api/agents/nist",
+            integration_score=0.92
         ),
         AgentFacts(
             agent_id="hipaa-01",
@@ -74,7 +80,8 @@ def seed_registry():
             trust_level=TrustLevel.VERIFIED,
             protocols=[Protocol.HTTPS],
             capabilities=["HIPAA Security Rule Assessment", "PHI Protection Audit"],
-            endpoint="/api/agents/hipaa"
+            endpoint="/api/agents/hipaa",
+            integration_score=0.90
         ),
         AgentFacts(
             agent_id="fhir-01",
@@ -83,7 +90,8 @@ def seed_registry():
             trust_level=TrustLevel.VERIFIED,
             protocols=[Protocol.HTTPS],
             capabilities=["FHIR Privacy & Security Assessment", "Interoperability Audit"],
-            endpoint="/api/agents/fhir"
+            endpoint="/api/agents/fhir",
+            integration_score=0.82
         )
     ]
     for a in agents:

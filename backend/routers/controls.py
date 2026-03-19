@@ -32,7 +32,7 @@ def map_control_to_response(c, assessment):
         implementation_status=impl_status,
         evidence_count=len(assessment.evidence_ids) if assessment and isinstance(assessment.evidence_ids, list) else 0,
         notes=assessment.notes if assessment else None,
-        confidence=assessment.confidence if assessment else 0.0,
+        confidence=assessment.confidence if assessment and assessment.confidence is not None else 0.0,
         poam_required=(assessment.poam_required == "true") if assessment else False,
         assessor=assessment.assessor if assessment else None,
         assessment_date=assessment.assessment_date if assessment else None,
@@ -83,12 +83,40 @@ async def list_controls(
     ctrl_result = await db.execute(query)
     controls_data = ctrl_result.scalars().all()
 
+    # Intelligent Evidence Discovery: Build mapping map
+    mapping_groups: Dict[str, List[str]] = {}
+    if framework in ["CMMC", "NIST"]:
+        map_q = select(ControlRecord.id, ControlRecord.nist_mapping).where(ControlRecord.nist_mapping.isnot(None))
+        map_res = (await db.execute(map_q)).all()
+        for cid, nist_id in map_res:
+            if nist_id not in mapping_groups: mapping_groups[nist_id] = []
+            mapping_groups[nist_id].append(cid)
+
     ass_result = await db.execute(assessments_q)
     assessments_map = {a.control_id: a for a in ass_result.scalars().all()}
 
     responses = []
     for c in controls_data:
         assessment = assessments_map.get(c.id)
+
+        # Cross-Framework Evidence Discovery: Aggregate evidence from mapped controls
+        if c.nist_mapping and c.nist_mapping in mapping_groups:
+            related_ids = [rid for rid in mapping_groups[c.nist_mapping] if rid != c.id]
+            if related_ids:
+                discovered_evidence = []
+                for rid in related_ids:
+                    rel_ass = assessments_map.get(rid)
+                    if rel_ass and rel_ass.evidence_ids:
+                        discovered_evidence.extend(rel_ass.evidence_ids)
+
+                if discovered_evidence:
+                    if not assessment:
+                        # Create a virtual assessment or placeholder if none exists
+                        assessment = AssessmentRecord(control_id=c.id, status="not_started", confidence=0.0, evidence_ids=list(set(discovered_evidence)))
+                    else:
+                        current_ev = list(assessment.evidence_ids) if assessment.evidence_ids else []
+                        assessment.evidence_ids = list(set(current_ev + discovered_evidence))
+
         response = map_control_to_response(c, assessment)
 
         if status and response.implementation_status != status.value:

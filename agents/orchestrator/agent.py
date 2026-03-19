@@ -321,6 +321,32 @@ async def trigger_full_run(framework: str = "CMMC", db: AsyncSession = Depends(g
     sprs = await _orchestrator.compute_sprs_score(db, framework=framework)
     scorecard = await _orchestrator.compute_zt_scorecard(db, framework=framework)
 
+    # 2.5 Cross-Framework Intelligence: Check for inherited implementation statuses
+    inheritance_summaries = []
+    if framework in ["CMMC", "NIST"]:
+        # Find controls with mappings but no assessment
+        assessments_map = await get_latest_assessments(db)
+        ctrl_q = select(ControlRecord).where(ControlRecord.framework == framework)
+        all_ctrls = (await db.execute(ctrl_q)).scalars().all()
+
+        for c in all_ctrls:
+            if not assessments_map.get(c.id) and c.nist_mapping:
+                # Look for an assessment in the OTHER framework for the same NIST ID
+                other_fw = "NIST" if framework == "CMMC" else "CMMC"
+                inherited_q = select(AssessmentRecord).join(ControlRecord, AssessmentRecord.control_id == ControlRecord.id)\
+                    .where(ControlRecord.framework == other_fw)\
+                    .where(ControlRecord.nist_mapping == c.nist_mapping)\
+                    .order_by(AssessmentRecord.assessment_date.desc())
+                inherited_res = (await db.execute(inherited_q)).scalars().first()
+
+                if inherited_res:
+                    inheritance_summaries.append({
+                        "control_id": c.id,
+                        "inherited_from": inherited_res.control_id,
+                        "status": inherited_res.status,
+                        "framework": other_fw
+                    })
+
     # 3. Generate AI Summary with Mistral & Evaluate RAG
     findings_summary = ""
     for agent_key, res in agent_results.items():
@@ -367,7 +393,8 @@ async def trigger_full_run(framework: str = "CMMC", db: AsyncSession = Depends(g
             "rag_evaluation": rag_eval.dict() if rag_eval else None,
             "sprs": sprs,
             "scorecard": scorecard,
-            "agent_runs": agent_results
+            "agent_runs": agent_results,
+            "inheritance": inheritance_summaries
         },
         status="completed",
         created_at=datetime.now(UTC),

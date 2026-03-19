@@ -10,6 +10,7 @@ interface AgentFacts {
   capabilities: string[];
   endpoint: string;
   last_verified: string;
+  integration_score: number;
 }
 
 const AgentFleetPage: React.FC = () => {
@@ -81,7 +82,11 @@ const AgentFleetPage: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-900">{agent.name}</h3>
-                  <p className="text-xs text-gray-400 font-mono">v{agent.version}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-gray-400 font-mono">v{agent.version}</p>
+                    <div className="h-1 w-1 bg-gray-300 rounded-full" />
+                    <span className="text-[10px] font-bold text-blue-600">Score: {Math.round(agent.integration_score * 100)}%</span>
+                  </div>
                 </div>
               </div>
               <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${

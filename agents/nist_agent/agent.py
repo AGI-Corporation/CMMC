@@ -17,6 +17,11 @@ class NISTAgent:
                 "status": "implemented",
                 "confidence": 1.0,
                 "finding": "Verified via automated IAM audit.",
+                "objectives": [
+                    {"id": "3.1.1[a]", "status": "pass", "finding": "Authorized users are identified."},
+                    {"id": "3.1.1[b]", "status": "pass", "finding": "Processes acting on behalf of authorized users are identified."},
+                    {"id": "3.1.1[c]", "status": "pass", "finding": "Devices are identified."}
+                ],
                 "remediation": None,
                 "implementation_guidance": "Limit system access to authorized users. Ensure that user access is managed through centralized identity provider (IdP)."
             },
@@ -25,6 +30,11 @@ class NISTAgent:
                 "status": "partially_implemented",
                 "confidence": 0.8,
                 "finding": "Identified users, but missing process identifiers.",
+                "objectives": [
+                    {"id": "3.5.1[a]", "status": "pass", "finding": "System users are identified."},
+                    {"id": "3.5.1[b]", "status": "fail", "finding": "Process identifiers for system services are missing in audit logs."},
+                    {"id": "3.5.1[c]", "status": "pass", "finding": "Devices are identified via MAC/IP binding."}
+                ],
                 "remediation": "Update IAM policy to include process identifiers for system services.",
                 "implementation_guidance": "Identify system users, processes acting on behalf of users, or devices. Ensure all service accounts are documented."
             },
@@ -33,6 +43,10 @@ class NISTAgent:
                 "status": "implemented",
                 "confidence": 1.0,
                 "finding": "Vulnerability scans are automated and run weekly.",
+                "objectives": [
+                    {"id": "3.11.2[a]", "status": "pass", "finding": "Vulnerabilities are scanned periodically."},
+                    {"id": "3.11.2[b]", "status": "pass", "finding": "Vulnerabilities are scanned when new threats are identified."}
+                ],
                 "remediation": None,
                 "implementation_guidance": "Scan for vulnerabilities in the system and applications when new vulnerabilities affecting the system are identified."
             }
