@@ -34,6 +34,7 @@ class AgentType(str, Enum):
     GOVERNANCE = "governance"          # Policy/risk/POA&M
     OPS = "operations"                 # IR/SIEM/SOAR
     MISTRAL = "mistral"                # AI analysis engine
+    SYNTHESIS = "synthesis"            # Hackathon platform
 
 
 class TaskTrigger(str, Enum):
@@ -42,6 +43,7 @@ class TaskTrigger(str, Enum):
     SCHEDULE = "schedule"
     MANUAL = "manual"
     ASSESSMENT = "assessment"
+    HACKATHON = "hackathon"
 
 
 @dataclass
@@ -132,6 +134,8 @@ class ComplianceOrchestrator:
             task.required_controls = task.required_controls or ["IR.2.092", "AU.2.041"]
         elif trigger == TaskTrigger.ASSESSMENT:
             task.assigned_agents = list(AgentType)
+        elif trigger == TaskTrigger.HACKATHON:
+            task.assigned_agents = [AgentType.SYNTHESIS, AgentType.GOVERNANCE, AgentType.MISTRAL]
         else:
             task.assigned_agents = [AgentType.GOVERNANCE, AgentType.MISTRAL]
 

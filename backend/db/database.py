@@ -78,6 +78,19 @@ class AssessmentRecord(Base):
     fingerprint = Column(String, nullable=True)  # OML provenance fingerprint
 
 
+class SynthesisRecord(Base):
+    __tablename__ = "synthesis_registration"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pending_id = Column(String, unique=True, index=True)
+    api_key = Column(String, nullable=True)
+    participant_id = Column(String, nullable=True)
+    team_id = Column(String, nullable=True)
+    registration_txn = Column(String, nullable=True)
+    status = Column(String, default="pending")  # pending, verified, completed
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+
 class AgentRunRecord(Base):
     __tablename__ = "agent_runs"
     id = Column(String, primary_key=True, index=True)

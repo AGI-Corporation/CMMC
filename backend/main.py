@@ -22,6 +22,7 @@ from agents.mistral_agent import agent as mistral
 from agents.infra_agent import agent as infra
 from agents.data_agent import agent as data
 from agents.nist_agent import agent as nist
+from agents.synthesis_agent import agent as synthesis_agent
 from agents.hipaa_agent import agent as hipaa
 from agents.fhir_agent import agent as fhir
 from agents.ops_agent import agent as ops
@@ -84,6 +85,7 @@ app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral 
 app.include_router(infra.router, prefix="/api/agents/infra", tags=["Infrastructure Agent"])
 app.include_router(data.router, prefix="/api/agents/data", tags=["Data Agent"])
 app.include_router(nist.router, prefix="/api/agents/nist", tags=["NIST Agent"])
+app.include_router(synthesis_agent.router, prefix="/api/agents/synthesis", tags=["Synthesis Integration Agent"])
 app.include_router(hipaa.router, prefix="/api/agents/hipaa", tags=["HIPAA Agent"])
 app.include_router(fhir.router, prefix="/api/agents/fhir", tags=["FHIR Agent"])
 app.include_router(ops.router, prefix="/api/agents/ops", tags=["Operational Security Agent"])
