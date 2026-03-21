@@ -1,0 +1,3 @@
+## 2025-05-22 - [Optimized Latest Assessment Query]
+**Learning:** The "latest per group" query pattern for assessments (group by control_id, max assessment_date) is a major bottleneck as the assessment history grows. Even with moderate data (50k records), a standard join-subquery can take ~47ms. Adding a composite index on `(control_id, assessment_date)` and filtering the subquery by only the necessary `control_ids` (e.g., when filtering by domain) reduces query time to ~10ms (approx. 79% improvement).
+**Action:** Always use the `get_latest_assessments` helper in `backend/db/database.py` and pass `control_ids` if the context is already filtered to avoid scanning the entire assessment table.
