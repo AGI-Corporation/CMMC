@@ -6,8 +6,9 @@ import os
 import json
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select
+from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select, func, Index
 from datetime import datetime, UTC
+from typing import List, Optional
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cmmc.db")
 
@@ -72,6 +73,10 @@ class AssessmentRecord(Base):
     next_review = Column(DateTime)
     poam_required = Column(String, default="false")
 
+    __table_args__ = (
+        Index("idx_control_date", "control_id", "assessment_date"),
+    )
+
 
 class AgentRunRecord(Base):
     __tablename__ = "agent_runs"
@@ -85,6 +90,36 @@ class AgentRunRecord(Base):
     mistral_model = Column(String)  # mistral model used for this run
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime)
+
+
+async def get_latest_assessments(db: AsyncSession, control_ids: Optional[List[str]] = None) -> List["AssessmentRecord"]:
+    """Fetch the latest assessment for each control, optionally filtered by control_ids."""
+    if control_ids is not None and not control_ids:
+        return []
+
+    sub_q = (
+        select(
+            AssessmentRecord.control_id,
+            func.max(AssessmentRecord.assessment_date).label("max_date")
+        )
+        .group_by(AssessmentRecord.control_id)
+        .subquery()
+    )
+
+    query = (
+        select(AssessmentRecord)
+        .join(
+            sub_q,
+            (AssessmentRecord.control_id == sub_q.c.control_id) &
+            (AssessmentRecord.assessment_date == sub_q.c.max_date)
+        )
+    )
+
+    if control_ids:
+        query = query.where(AssessmentRecord.control_id.in_(control_ids))
+
+    result = await db.execute(query)
+    return list(result.scalars().all())
 
 
 async def init_db():
