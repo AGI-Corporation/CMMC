@@ -15,33 +15,9 @@ import csv
 import io
 import json
 
-from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord
+from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord, get_latest_assessments
 
 router = APIRouter()
-
-async def get_latest_assessments(db: AsyncSession):
-    # Subquery for latest assessment date per control_id
-    subquery = (
-        select(
-            AssessmentRecord.control_id,
-            func.max(AssessmentRecord.assessment_date).label("max_date")
-        )
-        .group_by(AssessmentRecord.control_id)
-        .subquery()
-    )
-
-    # Join with the original table to get full records
-    query = (
-        select(AssessmentRecord)
-        .join(
-            subquery,
-            (AssessmentRecord.control_id == subquery.c.control_id) &
-            (AssessmentRecord.assessment_date == subquery.c.max_date)
-        )
-    )
-
-    result = await db.execute(query)
-    return result.scalars().all()
 
 @router.get("/ssp", summary="Generate System Security Plan (SSP) in Markdown")
 async def generate_ssp(
