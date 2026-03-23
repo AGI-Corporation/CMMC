@@ -7,7 +7,7 @@ from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from backend.db.database import get_db, ControlRecord, AssessmentRecord
+from backend.db.database import get_db, ControlRecord, AssessmentRecord, get_latest_assessments
 from backend.models.control import (
     Control, ControlResponse, ControlListResponse,
     ControlUpdate, CMMCLevel, ControlDomain, ImplementationStatus
@@ -27,37 +27,19 @@ async def list_controls(
     status: Optional[ImplementationStatus] = Query(None, description="Filter by implementation status"),
     db: AsyncSession = Depends(get_db)
 ):
-    # Base query for controls
+    # Bolt ⚡: First fetch ONLY necessary controls to minimize assessment lookups
     query = select(ControlRecord)
     if level:
         query = query.where(ControlRecord.level == level.value)
     if domain:
         query = query.where(ControlRecord.domain == domain.value)
 
-    # Efficiently get latest assessments for all relevant controls
-    sub_q = (
-        select(
-            AssessmentRecord.control_id,
-            func.max(AssessmentRecord.assessment_date).label("max_date")
-        )
-        .group_by(AssessmentRecord.control_id)
-        .subquery()
-    )
-
-    assessments_q = (
-        select(AssessmentRecord)
-        .join(
-            sub_q,
-            (AssessmentRecord.control_id == sub_q.c.control_id) &
-            (AssessmentRecord.assessment_date == sub_q.c.max_date)
-        )
-    )
-
     ctrl_result = await db.execute(query)
     controls_data = ctrl_result.scalars().all()
 
-    ass_result = await db.execute(assessments_q)
-    assessments_map = {a.control_id: a for a in ass_result.scalars().all()}
+    # Pass control IDs to the optimized helper to fetch ONLY relevant assessments
+    target_ids = [c.id for c in controls_data]
+    assessments_map = await get_latest_assessments(db, control_ids=target_ids)
 
     responses = []
     for c in controls_data:
