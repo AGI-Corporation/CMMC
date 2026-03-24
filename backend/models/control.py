@@ -37,6 +37,7 @@ class ImplementationStatus(str, Enum):
     NOT_APPLICABLE = "not_applicable"
     PARTIALLY_IMPLEMENTED = "partially_implemented"
     PLANNED = "planned"
+    NOT_IMPLEMENTED = "not_implemented"
 
 
 class Control(BaseModel):
