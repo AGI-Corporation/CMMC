@@ -19,6 +19,33 @@ from backend.db.database import get_db, AssessmentRecord, ControlRecord, Evidenc
 
 router = APIRouter()
 
+def get_status_emoji(status: str) -> str:
+    """Return a visual emoji for implementation status."""
+    mapping = {
+        "implemented": "✅",
+        "partial": "🟡",
+        "partially_implemented": "🟡",
+        "planned": "📝",
+        "not_implemented": "🛑",
+        "na": "⚪",
+        "not_started": "⚪"
+    }
+    return mapping.get(status, "❓")
+
+def get_progress_bar(implemented: int, total: int, width: int = 15) -> str:
+    """Generate a Markdown-compatible progress bar."""
+    if not total:
+        return "░" * width
+    filled_len = int(width * implemented // total)
+    bar = "█" * filled_len + "░" * (width - filled_len)
+    pct = (implemented / total) * 100
+    return f"{bar} ({pct:.1f}%)"
+
+def get_confidence_stars(confidence: float) -> str:
+    """Convert confidence float to star rating (1-5)."""
+    stars = int(confidence * 5 + 0.5)
+    return "⭐" * max(1, min(5, stars))
+
 async def get_latest_assessments(db: AsyncSession):
     # Subquery for latest assessment date per control_id
     subquery = (
@@ -69,6 +96,8 @@ async def generate_ssp(
     sprs_estimate = 110 - (status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5)
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
+    progress_bar = get_progress_bar(status_counts['implemented'], len(controls))
+
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
@@ -88,11 +117,12 @@ async def generate_ssp(
 | Classification | {classification} |
 | Assessment Date | {date.today()} |
 | Total Controls | {len(controls)} |
-| Implemented | {status_counts['implemented']} |
-| Partial | {status_counts['partial']} |
-| Planned | {status_counts['planned']} |
-| Not Implemented | {status_counts['not_implemented']} |
-| N/A | {status_counts['na']} |
+| Implementation Progress | {progress_bar} |
+| Implemented | ✅ {status_counts['implemented']} |
+| Partial | 🟡 {status_counts['partial']} |
+| Planned | 📝 {status_counts['planned']} |
+| Not Implemented | 🛑 {status_counts['not_implemented']} |
+| N/A | ⚪ {status_counts['na']} |
 
 ## 2. Control Implementation Summary
 
@@ -115,9 +145,12 @@ async def generate_ssp(
     for a in assessments[:20]:  # Limit for readability
         ctrl = controls.get(a.control_id)
         ctrl_title = ctrl.title if ctrl else "Unknown"
+        status_emoji = get_status_emoji(a.status)
+        conf_stars = get_confidence_stars(a.confidence)
+
         ssp += f"""### {a.control_id} - {ctrl_title}
-- **Status:** {a.status}
-- **Confidence:** {a.confidence:.0%}
+- **Status:** {status_emoji} {a.status}
+- **Confidence:** {conf_stars} ({a.confidence:.0%})
 - **Notes:** {a.notes or 'None'}
 - **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}
 
