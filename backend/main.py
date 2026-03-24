@@ -15,6 +15,7 @@ import json
 import os
 
 from backend.routers import controls, assessment, evidence, reports
+from backend.middleware.security import SecurityHeadersMiddleware
 from agents.orchestrator import agent as orchestrator
 from agents.icam_agent import agent as icam
 from agents.devsecops_agent import agent as devsecops
@@ -49,6 +50,8 @@ app = FastAPI(
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 
 cors_origins = json.loads(os.getenv("CORS_ORIGINS", '["http://localhost:3000", "http://localhost:5173"]'))
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
