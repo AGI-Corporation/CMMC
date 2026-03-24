@@ -23,7 +23,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest pytest-asyncio httpx sqlalchemy aiosqlite pydantic-settings fastapi uvicorn python-dotenv python-jose[cryptography] passlib[bcrypt] python-docx openpyxl reportlab jsonschema pyyaml pandas mistralai==1.1.0 fastapi-mcp mcp anthropic openai psycopg2-binary
+        pip install -r requirements.txt
     - name: Test with pytest
       run: |
         export PYTHONPATH=$PYTHONPATH:.
