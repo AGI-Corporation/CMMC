@@ -19,6 +19,35 @@ from backend.db.database import get_db, AssessmentRecord, ControlRecord, Evidenc
 
 router = APIRouter()
 
+
+def get_status_emoji(status: str) -> str:
+    """Map implementation status to a visual emoji for better scannability."""
+    mapping = {
+        "implemented": "✅",
+        "partial": "🟡",
+        "partially_implemented": "🟡",
+        "planned": "📝",
+        "not_implemented": "🛑",
+        "na": "⚪",
+        "not_started": "⚪",
+    }
+    return mapping.get(status, "❓")
+
+
+def get_confidence_stars(confidence: float) -> str:
+    """Convert confidence score (0.0 - 1.0) to a 5-star rating."""
+    # Use standard rounding to ensure 0.50 maps to 3 stars
+    stars = int(confidence * 5 + 0.5)
+    return "⭐" * stars + "☆" * (5 - stars)
+
+
+def get_progress_bar(percentage: float, length: int = 15) -> str:
+    """Generate a Markdown-compatible progress bar."""
+    filled = int(percentage / 100 * length)
+    bar = "█" * filled + "░" * (length - filled)
+    return f"`{bar}` {percentage:.1f}%"
+
+
 async def get_latest_assessments(db: AsyncSession):
     # Subquery for latest assessment date per control_id
     subquery = (
@@ -69,6 +98,10 @@ async def generate_ssp(
     sprs_estimate = 110 - (status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5)
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
+    total_controls_count = len(controls)
+    compliance_pct = (status_counts["implemented"] / total_controls_count * 100) if total_controls_count > 0 else 0
+    progress_bar = get_progress_bar(compliance_pct)
+
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
@@ -87,6 +120,7 @@ async def generate_ssp(
 | Owner | AGI Corporation |
 | Classification | {classification} |
 | Assessment Date | {date.today()} |
+| Overall Compliance | {progress_bar} |
 | Total Controls | {len(controls)} |
 | Implemented | {status_counts['implemented']} |
 | Partial | {status_counts['partial']} |
@@ -115,9 +149,11 @@ async def generate_ssp(
     for a in assessments[:20]:  # Limit for readability
         ctrl = controls.get(a.control_id)
         ctrl_title = ctrl.title if ctrl else "Unknown"
+        status_display = f"{get_status_emoji(a.status)} {a.status.replace('_', ' ').title()}"
+        confidence_display = f"{get_confidence_stars(a.confidence)} ({a.confidence:.0%})"
         ssp += f"""### {a.control_id} - {ctrl_title}
-- **Status:** {a.status}
-- **Confidence:** {a.confidence:.0%}
+- **Status:** {status_display}
+- **Confidence:** {confidence_display}
 - **Notes:** {a.notes or 'None'}
 - **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}
 
