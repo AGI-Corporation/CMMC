@@ -179,4 +179,4 @@ async def update_control_status(control_id: str, update: ControlUpdate, db: Asyn
     description="Get all CMMC controls for a specific domain (e.g., AC for Access Control)."
 )
 async def get_controls_by_domain(domain: ControlDomain, db: AsyncSession = Depends(get_db)):
-    return await list_controls(domain=domain, db=db)
+    return await list_controls(level=None, domain=domain, status=None, db=db)
