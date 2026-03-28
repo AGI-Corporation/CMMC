@@ -15,7 +15,7 @@ import csv
 import io
 import json
 
-from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord
+from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord, get_latest_assessments
 
 router = APIRouter()
 
@@ -83,7 +83,8 @@ async def generate_ssp(
     Includes: system overview, control family summaries, implementation status.
     """
     # Fetch latest assessments
-    assessments = await get_latest_assessments(db)
+    assessments_dict = await get_latest_assessments(db)
+    assessments = list(assessments_dict.values())
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
@@ -109,6 +110,7 @@ async def generate_ssp(
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
 **Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
 **SPRS Score Estimate:** {sprs_estimate}  
+**Overall Progress:** {get_progress_bar(implemented_pct)} {implemented_pct:.1f}%
 
 ---
 
@@ -120,13 +122,12 @@ async def generate_ssp(
 | Owner | AGI Corporation |
 | Classification | {classification} |
 | Assessment Date | {date.today()} |
-| Overall Compliance | {progress_bar} |
-| Total Controls | {len(controls)} |
-| Implemented | {status_counts['implemented']} |
-| Partial | {status_counts['partial']} |
-| Planned | {status_counts['planned']} |
-| Not Implemented | {status_counts['not_implemented']} |
-| N/A | {status_counts['na']} |
+| Total Controls | {total_controls} |
+| Implemented | {get_status_emoji('implemented')} {status_counts['implemented']} |
+| Partial | {get_status_emoji('partial')} {status_counts['partial']} |
+| Planned | {get_status_emoji('planned')} {status_counts['planned']} |
+| Not Implemented | {get_status_emoji('not_implemented')} {status_counts['not_implemented']} |
+| N/A | {get_status_emoji('na')} {status_counts['na']} |
 
 ## 2. Control Implementation Summary
 
@@ -182,7 +183,8 @@ async def generate_poam(
     Generate a Plan of Action & Milestones (POA&M) as CSV.
     Includes all partial and not_implemented controls.
     """
-    assessments = await get_latest_assessments(db)
+    assessments_dict = await get_latest_assessments(db)
+    assessments = list(assessments_dict.values())
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
@@ -225,7 +227,8 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Return compliance posture summary for dashboard rendering."""
-    assessments = await get_latest_assessments(db)
+    assessments_dict = await get_latest_assessments(db)
+    assessments = list(assessments_dict.values())
 
     status_counts = {"implemented": 0, "partial": 0, "planned": 0, "not_implemented": 0, "na": 0}
 
