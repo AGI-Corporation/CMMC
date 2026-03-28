@@ -32,6 +32,7 @@ class ControlDomain(str, Enum):
 
 class ImplementationStatus(str, Enum):
     NOT_STARTED = "not_started"
+    NOT_IMPLEMENTED = "not_implemented"
     IN_PROGRESS = "in_progress"
     IMPLEMENTED = "implemented"
     NOT_APPLICABLE = "not_applicable"
