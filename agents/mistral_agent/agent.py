@@ -9,6 +9,7 @@ implementation evidence, and produce POAM recommendations.
 import os
 import json
 import uuid
+import logging
 from datetime import datetime, UTC
 from typing import Optional, List, Dict, Any
 from mistralai import Mistral
@@ -202,22 +203,20 @@ class MistralComplianceAgent:
         Domain Breakdown: {json.dumps(domain_breakdown, indent=2)}
         Generate the SSP narrative section."""
 
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
         if self.use_mistral_client:
             response = await self.client.chat.complete_async(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
+                messages=messages,
             )
             return response.choices[0].message.content
         else:
             response = await self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
+                messages=messages,
             )
             return response.choices[0].message.content
 
@@ -287,7 +286,8 @@ async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_d
         await agent.record_run(db, "manual", f"Gap Analysis: {req.control_id}", [req.control_id], result)
         return {"control_id": req.control_id, "analysis": result, "model": MISTRAL_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.exception(e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/code-review", summary="DevSecOps code security analysis with Codestral")
@@ -300,7 +300,8 @@ async def code_review(req: CodeReviewRequest, db: AsyncSession = Depends(get_db)
         await agent.record_run(db, "manual", "Code Review", req.relevant_controls or [], result)
         return {"analysis": result, "model": MISTRAL_CODE_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.exception(e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/ask", summary="Ask a CMMC/ZT compliance question")
@@ -310,4 +311,5 @@ async def ask_question(req: QuestionRequest):
         answer = await agent.answer_compliance_question(req.question, req.context)
         return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.exception(e)
+        raise HTTPException(status_code=500, detail="Internal server error")
