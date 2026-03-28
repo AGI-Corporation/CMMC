@@ -40,34 +40,10 @@ def get_progress_bar(percentage: float, width: int = 10) -> str:
     return f"`{bar}` {percentage:.1f}%"
 
 def get_confidence_stars(confidence: float) -> str:
-    """Convert confidence float (0-1) to star rating (1-5)."""
-    stars = int(confidence * 5 + 0.5)
-    stars = max(1, min(5, stars))
-    return "⭐" * stars
-
-async def get_latest_assessments(db: AsyncSession):
-    # Subquery for latest assessment date per control_id
-    subquery = (
-        select(
-            AssessmentRecord.control_id,
-            func.max(AssessmentRecord.assessment_date).label("max_date")
-        )
-        .group_by(AssessmentRecord.control_id)
-        .subquery()
-    )
-
-    # Join with the original table to get full records
-    query = (
-        select(AssessmentRecord)
-        .join(
-            subquery,
-            (AssessmentRecord.control_id == subquery.c.control_id) &
-            (AssessmentRecord.assessment_date == subquery.c.max_date)
-        )
-    )
-
-    result = await db.execute(query)
-    return result.scalars().all()
+    """Convert confidence float (0-1) to star rating string with 5 positions."""
+    filled = int(confidence * 5 + 0.5)
+    filled = max(0, min(5, filled))
+    return "⭐" * filled + "☆" * (5 - filled)
 
 @router.get("/ssp", summary="Generate System Security Plan (SSP) in Markdown")
 async def generate_ssp(
@@ -110,7 +86,7 @@ async def generate_ssp(
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
 **Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
 **SPRS Score Estimate:** {sprs_estimate}  
-**Overall Progress:** {get_progress_bar(implemented_pct)} {implemented_pct:.1f}%
+**Overall Compliance:** {get_progress_bar(implemented_pct)}
 
 ---
 
