@@ -48,30 +48,6 @@ def get_progress_bar(percentage: float, length: int = 15) -> str:
     return f"`{bar}` {percentage:.1f}%"
 
 
-async def get_latest_assessments(db: AsyncSession):
-    # Subquery for latest assessment date per control_id
-    subquery = (
-        select(
-            AssessmentRecord.control_id,
-            func.max(AssessmentRecord.assessment_date).label("max_date")
-        )
-        .group_by(AssessmentRecord.control_id)
-        .subquery()
-    )
-
-    # Join with the original table to get full records
-    query = (
-        select(AssessmentRecord)
-        .join(
-            subquery,
-            (AssessmentRecord.control_id == subquery.c.control_id) &
-            (AssessmentRecord.assessment_date == subquery.c.max_date)
-        )
-    )
-
-    result = await db.execute(query)
-    return result.scalars().all()
-
 @router.get("/ssp", summary="Generate System Security Plan (SSP) in Markdown")
 async def generate_ssp(
     system_name: str = "AGI Corp CMMC System",
@@ -110,7 +86,7 @@ async def generate_ssp(
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
 **Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
 **SPRS Score Estimate:** {sprs_estimate}  
-**Overall Progress:** {get_progress_bar(implemented_pct)} {implemented_pct:.1f}%
+**Overall Compliance:** {progress_bar}
 
 ---
 
@@ -122,7 +98,7 @@ async def generate_ssp(
 | Owner | AGI Corporation |
 | Classification | {classification} |
 | Assessment Date | {date.today()} |
-| Total Controls | {total_controls} |
+| Total Controls | {total_controls_count} |
 | Implemented | {get_status_emoji('implemented')} {status_counts['implemented']} |
 | Partial | {get_status_emoji('partial')} {status_counts['partial']} |
 | Planned | {get_status_emoji('planned')} {status_counts['planned']} |
