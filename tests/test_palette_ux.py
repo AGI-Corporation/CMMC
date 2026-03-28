@@ -2,42 +2,66 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 from backend.main import app
-from backend.db.database import init_db, engine, Base
-import os
+from backend.db.database import init_db, engine, Base, AssessmentRecord
+from sqlalchemy.ext.asyncio import AsyncSession
+import uuid
+from datetime import datetime, UTC
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
+def anyio_backend():
+    return "asyncio"
+
+@pytest.fixture(scope="module", autouse=True)
 async def setup_db():
-    os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_palette.db"
+    # Use a separate test database for this module
+    import os
+    os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_ux.db"
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await init_db()
+
+    # Add some sample assessments with different confidence/status
+    from backend.db.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        a1 = AssessmentRecord(
+            id=str(uuid.uuid4()),
+            control_id="AC.1.001",
+            status="implemented",
+            confidence=1.0,
+            assessment_date=datetime.now(UTC)
+        )
+        a2 = AssessmentRecord(
+            id=str(uuid.uuid4()),
+            control_id="AC.1.002",
+            status="partial",
+            confidence=0.5,
+            assessment_date=datetime.now(UTC)
+        )
+        session.add_all([a1, a2])
+        await session.commit()
+
     yield
-    if os.path.exists("./test_palette.db"):
-        os.remove("./test_palette.db")
+    # Cleanup
+    if os.path.exists("./test_ux.db"):
+        os.remove("./test_ux.db")
 
 @pytest.mark.anyio
-async def test_ssp_ux_enhanced(setup_db):
+async def test_ssp_ux_elements():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        # 1. Update a control to have some status and confidence
-        update_data = {
-            "implementation_status": "implemented",
-            "notes": "Verified implementation",
-            "responsible_party": "Palette",
-            "confidence": 1.0
-        }
-        await ac.patch("/api/controls/AC.1.001", json=update_data)
+        resp = await ac.get("/api/reports/ssp")
+        assert resp.status_code == 200
+        content = resp.text
 
-        # 2. Generate SSP
-        response = await ac.get("/api/reports/ssp")
+        # Check for progress bar characters
+        assert "█" in content or "░" in content
+        assert "Overall Compliance" in content
 
-    assert response.status_code == 200
-    print("\n--- Enhanced SSP Output ---")
-    print(response.text)
-    print("----------------------------")
+        # Check for emojis
+        assert "✅" in content
+        assert "🟡" in content
 
-    # Check for emojis
-    assert "✅" in response.text
-    # Check for progress bar
-    assert "█" in response.text or "░" in response.text
-    # Check for confidence stars
-    assert "⭐⭐⭐⭐⭐" in response.text
+        # Check for confidence stars
+        # 1.0 confidence should have 5 stars: ⭐⭐⭐⭐⭐
+        assert "⭐⭐⭐⭐⭐" in content
+        # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
+        assert "⭐⭐⭐☆☆" in content
