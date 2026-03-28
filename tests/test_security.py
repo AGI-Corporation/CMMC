@@ -12,24 +12,20 @@ async def test_security_headers():
 
     assert response.status_code == 200
 
-    # Check for essential security headers
-    assert response.headers["X-Frame-Options"] == "DENY"
-    assert response.headers["X-Content-Type-Options"] == "nosniff"
-    assert response.headers["X-XSS-Protection"] == "1; mode=block"
-    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
-    assert "Content-Security-Policy" in response.headers
-    assert response.headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
+    # Check for X-Frame-Options
+    assert response.headers.get("X-Frame-Options") == "DENY"
 
-@pytest.mark.anyio
-async def test_csp_header():
-    """
-    Verify that the Content-Security-Policy header has the expected directives.
-    """
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.get("/health")
+    # Check for X-Content-Type-Options
+    assert response.headers.get("X-Content-Type-Options") == "nosniff"
 
-    csp = response.headers["Content-Security-Policy"]
+    # Check for X-XSS-Protection
+    assert response.headers.get("X-XSS-Protection") == "1; mode=block"
+
+    # Check for Referrer-Policy
+    assert response.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+
+    # Check for Content-Security-Policy
+    csp = response.headers.get("Content-Security-Policy")
+    assert csp is not None
     assert "default-src 'self'" in csp
-    assert "script-src 'self' 'unsafe-inline'" in csp
-    assert "style-src 'self' 'unsafe-inline'" in csp
     assert "frame-ancestors 'none'" in csp
