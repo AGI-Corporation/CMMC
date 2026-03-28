@@ -15,7 +15,8 @@ async def test_security_headers():
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-XSS-Protection"] == "1; mode=block"
     assert response.headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
-    assert response.headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+    assert "frame-ancestors 'none';" in response.headers["Content-Security-Policy"]
+    assert "default-src 'self';" in response.headers["Content-Security-Policy"]
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
 
 @pytest.mark.anyio
@@ -28,5 +29,6 @@ async def test_security_headers_root():
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-XSS-Protection"] == "1; mode=block"
     assert response.headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
-    assert response.headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+    assert "frame-ancestors 'none';" in response.headers["Content-Security-Policy"]
+    assert "default-src 'self';" in response.headers["Content-Security-Policy"]
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
