@@ -11,21 +11,22 @@ async def test_security_headers():
         response = await ac.get("/health")
 
     assert response.status_code == 200
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-XSS-Protection"] == "1; mode=block"
+    assert response.headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
+    assert response.headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
 
-    # Check for X-Frame-Options
-    assert response.headers.get("X-Frame-Options") == "DENY"
+@pytest.mark.anyio
+async def test_security_headers_root():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/")
 
-    # Check for X-Content-Type-Options
-    assert response.headers.get("X-Content-Type-Options") == "nosniff"
-
-    # Check for X-XSS-Protection
-    assert response.headers.get("X-XSS-Protection") == "1; mode=block"
-
-    # Check for Referrer-Policy
-    assert response.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
-
-    # Check for Content-Security-Policy
-    csp = response.headers.get("Content-Security-Policy")
-    assert csp is not None
-    assert "default-src 'self'" in csp
-    assert "frame-ancestors 'none'" in csp
+    assert response.status_code == 200
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-XSS-Protection"] == "1; mode=block"
+    assert response.headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
+    assert response.headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"

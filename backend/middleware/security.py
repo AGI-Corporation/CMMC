@@ -1,38 +1,31 @@
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi import Request, Response
+from starlette.requests import Request
+from starlette.responses import Response
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
-    Middleware that adds security-related headers to all responses.
-    This provides defense-in-depth protection against clickjacking,
-    MIME-type sniffing, and other common web vulnerabilities.
+    Middleware that adds standard security headers to all HTTP responses.
+    Provides defense-in-depth against common web vulnerabilities.
     """
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
 
-        # Prevent Clickjacking
+        # Prevent clickjacking by not allowing the site to be embedded in an iframe
         response.headers["X-Frame-Options"] = "DENY"
 
-        # Prevent MIME-type sniffing
+        # Prevent browsers from MIME-type sniffing
         response.headers["X-Content-Type-Options"] = "nosniff"
 
-        # Enable XSS protection in older browsers
+        # Enable XSS filtering in browsers
         response.headers["X-XSS-Protection"] = "1; mode=block"
 
-        # Control how much referrer information is shared
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-
-        # Basic Content Security Policy (CSP)
-        # Prevents loading of scripts from untrusted sources and framing by other sites
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; "
-            "frame-ancestors 'none';"
-        )
-
-        # HTTP Strict Transport Security: Enforce HTTPS
+        # Enforce HTTPS (HSTS) - 1 year
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+        # Content Security Policy - restrict where the site can be embedded
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+
+        # Referrer Policy - only send referrer for same-origin requests
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
         return response
