@@ -32,7 +32,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "frame-ancestors 'none';"
         )
 
-        # HSTS (Strict-Transport-Security) - only if not in development
-        # For now, we'll omit it as we are in a dev environment and don't have HTTPS
+        # HTTP Strict Transport Security: Enforce HTTPS
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
         return response

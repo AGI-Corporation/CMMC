@@ -2,14 +2,10 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from backend.main import app
 
-@pytest.fixture(scope="session")
-def anyio_backend():
-    return "asyncio"
-
 @pytest.mark.anyio
 async def test_security_headers():
     """
-    Verify that essential security headers are present in the response.
+    Verify that SecurityHeadersMiddleware correctly adds the required headers.
     """
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/health")
