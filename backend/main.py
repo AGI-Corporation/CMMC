@@ -59,6 +59,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
 
 # ─── Routers ──────────────────────────────────────────────────────────────────

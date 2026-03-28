@@ -4,6 +4,9 @@ from backend.main import app
 
 @pytest.mark.anyio
 async def test_security_headers():
+    """
+    Verify that SecurityHeadersMiddleware correctly adds the required headers.
+    """
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/health")
 

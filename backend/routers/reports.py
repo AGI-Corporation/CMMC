@@ -15,9 +15,38 @@ import csv
 import io
 import json
 
-from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord
+from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord, get_latest_assessments
 
 router = APIRouter()
+
+
+def get_status_emoji(status: str) -> str:
+    """Map implementation status to a visual emoji for better scannability."""
+    mapping = {
+        "implemented": "✅",
+        "partial": "🟡",
+        "partially_implemented": "🟡",
+        "planned": "📝",
+        "not_implemented": "🛑",
+        "na": "⚪",
+        "not_started": "⚪",
+    }
+    return mapping.get(status, "❓")
+
+
+def get_confidence_stars(confidence: float) -> str:
+    """Convert confidence score (0.0 - 1.0) to a 5-star rating."""
+    # Use standard rounding to ensure 0.50 maps to 3 stars
+    stars = int(confidence * 5 + 0.5)
+    return "⭐" * stars + "☆" * (5 - stars)
+
+
+def get_progress_bar(percentage: float, length: int = 15) -> str:
+    """Generate a Markdown-compatible progress bar."""
+    filled = int(percentage / 100 * length)
+    bar = "█" * filled + "░" * (length - filled)
+    return f"`{bar}` {percentage:.1f}%"
+
 
 async def get_latest_assessments(db: AsyncSession):
     # Subquery for latest assessment date per control_id
@@ -54,7 +83,8 @@ async def generate_ssp(
     Includes: system overview, control family summaries, implementation status.
     """
     # Fetch latest assessments
-    assessments = await get_latest_assessments(db)
+    assessments_dict = await get_latest_assessments(db)
+    assessments = list(assessments_dict.values())
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
@@ -69,6 +99,10 @@ async def generate_ssp(
     sprs_estimate = 110 - (status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5)
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
+    total_controls_count = len(controls)
+    compliance_pct = (status_counts["implemented"] / total_controls_count * 100) if total_controls_count > 0 else 0
+    progress_bar = get_progress_bar(compliance_pct)
+
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
@@ -76,6 +110,7 @@ async def generate_ssp(
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
 **Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
 **SPRS Score Estimate:** {sprs_estimate}  
+**Overall Progress:** {get_progress_bar(implemented_pct)} {implemented_pct:.1f}%
 
 ---
 
@@ -87,12 +122,12 @@ async def generate_ssp(
 | Owner | AGI Corporation |
 | Classification | {classification} |
 | Assessment Date | {date.today()} |
-| Total Controls | {len(controls)} |
-| Implemented | {status_counts['implemented']} |
-| Partial | {status_counts['partial']} |
-| Planned | {status_counts['planned']} |
-| Not Implemented | {status_counts['not_implemented']} |
-| N/A | {status_counts['na']} |
+| Total Controls | {total_controls} |
+| Implemented | {get_status_emoji('implemented')} {status_counts['implemented']} |
+| Partial | {get_status_emoji('partial')} {status_counts['partial']} |
+| Planned | {get_status_emoji('planned')} {status_counts['planned']} |
+| Not Implemented | {get_status_emoji('not_implemented')} {status_counts['not_implemented']} |
+| N/A | {get_status_emoji('na')} {status_counts['na']} |
 
 ## 2. Control Implementation Summary
 
@@ -115,9 +150,11 @@ async def generate_ssp(
     for a in assessments[:20]:  # Limit for readability
         ctrl = controls.get(a.control_id)
         ctrl_title = ctrl.title if ctrl else "Unknown"
+        status_display = f"{get_status_emoji(a.status)} {a.status.replace('_', ' ').title()}"
+        confidence_display = f"{get_confidence_stars(a.confidence)} ({a.confidence:.0%})"
         ssp += f"""### {a.control_id} - {ctrl_title}
-- **Status:** {a.status}
-- **Confidence:** {a.confidence:.0%}
+- **Status:** {status_display}
+- **Confidence:** {confidence_display}
 - **Notes:** {a.notes or 'None'}
 - **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}
 
@@ -146,7 +183,8 @@ async def generate_poam(
     Generate a Plan of Action & Milestones (POA&M) as CSV.
     Includes all partial and not_implemented controls.
     """
-    assessments = await get_latest_assessments(db)
+    assessments_dict = await get_latest_assessments(db)
+    assessments = list(assessments_dict.values())
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
@@ -189,7 +227,8 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Return compliance posture summary for dashboard rendering."""
-    assessments = await get_latest_assessments(db)
+    assessments_dict = await get_latest_assessments(db)
+    assessments = list(assessments_dict.values())
 
     status_counts = {"implemented": 0, "partial": 0, "planned": 0, "not_implemented": 0, "na": 0}
 
