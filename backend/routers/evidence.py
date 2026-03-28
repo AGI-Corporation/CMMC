@@ -6,21 +6,30 @@ Handles CMMC evidence artifact CRUD - REST and MCP tool.
 Evidence types: log, scan, policy, diagram, screenshot, report, configuration.
 All evidence records include ZT pillar, capability ID, and control mappings.
 """
-import uuid
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from datetime import datetime, UTC
 
-from backend.db.database import get_db, EvidenceRecord
-from backend.models.evidence import EvidenceCreate, EvidenceResponse, EvidenceListResponse
+import uuid
+from datetime import UTC, datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.db.database import EvidenceRecord, get_db
+from backend.models.evidence import (
+    EvidenceCreate,
+    EvidenceListResponse,
+    EvidenceResponse,
+)
 
 router = APIRouter()
 
 
-@router.post("/", response_model=EvidenceResponse,
-             summary="Upload evidence artifact for a CMMC control")
+@router.post(
+    "/",
+    response_model=EvidenceResponse,
+    summary="Upload evidence artifact for a CMMC control",
+)
 async def create_evidence(
     evidence: EvidenceCreate,
     db: AsyncSession = Depends(get_db),
@@ -63,8 +72,9 @@ async def create_evidence(
     )
 
 
-@router.get("/", response_model=EvidenceListResponse,
-            summary="List all evidence artifacts")
+@router.get(
+    "/", response_model=EvidenceListResponse, summary="List all evidence artifacts"
+)
 async def list_evidence(
     control_id: Optional[str] = None,
     zt_pillar: Optional[str] = None,
@@ -102,8 +112,11 @@ async def list_evidence(
     return EvidenceListResponse(total=len(items), evidence=items)
 
 
-@router.get("/{evidence_id}", response_model=EvidenceResponse,
-            summary="Get a specific evidence artifact")
+@router.get(
+    "/{evidence_id}",
+    response_model=EvidenceResponse,
+    summary="Get a specific evidence artifact",
+)
 async def get_evidence(
     evidence_id: str,
     db: AsyncSession = Depends(get_db),

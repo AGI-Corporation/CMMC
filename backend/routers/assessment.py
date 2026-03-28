@@ -2,16 +2,18 @@
 Assessment Router - SPRS score calculation and compliance dashboard.
 These endpoints become MCP tools: calculate_sprs_score, get_compliance_dashboard.
 """
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from typing import Dict, List, Optional
+
 import os
 import uuid
-from datetime import datetime, UTC
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from datetime import UTC, datetime
+from typing import Dict, List
 
-from backend.db.database import get_db, ControlRecord, AssessmentRecord, AgentRunRecord, get_latest_assessments
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.db.database import AgentRunRecord, AssessmentRecord, ControlRecord, get_db
 
 router = APIRouter()
 
@@ -20,12 +22,24 @@ router = APIRouter()
 # Total possible score = 110 points
 SPRS_DEDUCTIONS = {
     # High value controls (5 points each)
-    "AC.2.006": 5, "AC.2.007": 5, "AC.3.017": 5, "AC.3.018": 5,
-    "IA.3.083": 5, "IA.3.084": 5, "SC.3.177": 5,
-    # Medium value controls (3 points each)  
-    "AC.1.001": 3, "AC.1.002": 3, "IA.1.076": 3, "IA.1.077": 3,
-    "SC.1.175": 3, "SC.1.176": 3, "SI.1.210": 3, "SI.1.211": 3,
-    "SI.1.212": 3, "SI.1.213": 3,
+    "AC.2.006": 5,
+    "AC.2.007": 5,
+    "AC.3.017": 5,
+    "AC.3.018": 5,
+    "IA.3.083": 5,
+    "IA.3.084": 5,
+    "SC.3.177": 5,
+    # Medium value controls (3 points each)
+    "AC.1.001": 3,
+    "AC.1.002": 3,
+    "IA.1.076": 3,
+    "IA.1.077": 3,
+    "SC.1.175": 3,
+    "SC.1.176": 3,
+    "SI.1.210": 3,
+    "SI.1.211": 3,
+    "SI.1.212": 3,
+    "SI.1.213": 3,
 }
 
 
@@ -55,20 +69,43 @@ class SPRSResult(BaseModel):
     certification_level: str
     assessment_date: str
 
+
+async def get_latest_assessments(db: AsyncSession):
+    sub_q = (
+        select(
+            AssessmentRecord.control_id,
+            func.max(AssessmentRecord.assessment_date).label("max_date"),
+        )
+        .group_by(AssessmentRecord.control_id)
+        .subquery()
+    )
+    query = select(AssessmentRecord).join(
+        sub_q,
+        (AssessmentRecord.control_id == sub_q.c.control_id)
+        & (AssessmentRecord.assessment_date == sub_q.c.max_date),
+    )
+    result = await db.execute(query)
+    return {a.control_id: a for a in result.scalars().all()}
+
+
 @router.get(
     "/dashboard",
     response_model=DashboardSummary,
     summary="Get Compliance Dashboard",
-    description="Get overall CMMC compliance posture summary including implementation percentages, SPRS score, and breakdown by domain and level."
+    description="Get overall CMMC compliance posture summary including implementation percentages, SPRS score, and breakdown by domain and level.",
 )
 async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ControlRecord))
     controls = result.scalars().all()
 
     assessments_map = await get_latest_assessments(db)
-    
+
     by_domain = {}
-    by_level = {"Level 1": {"total": 0, "implemented": 0}, "Level 2": {"total": 0, "implemented": 0}, "Level 3": {"total": 0, "implemented": 0}}
+    by_level = {
+        "Level 1": {"total": 0, "implemented": 0},
+        "Level 2": {"total": 0, "implemented": 0},
+        "Level 3": {"total": 0, "implemented": 0},
+    }
     implemented = not_implemented = partial = not_started = not_applicable = 0
     sprs_score = 110  # Start at max, deduct for non-implemented
 
@@ -105,7 +142,7 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
 
     total = len(controls)
     pct = (implemented / total * 100) if total > 0 else 0
-    
+
     if pct >= 100:
         readiness = "Ready for Certification"
     elif pct >= 80:
@@ -126,7 +163,7 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
         sprs_score=max(sprs_score, -203),  # SPRS floor is -203
         by_domain=by_domain,
         by_level=by_level,
-        readiness=readiness
+        readiness=readiness,
     )
 
 
@@ -134,7 +171,7 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     "/sprs",
     response_model=SPRSResult,
     summary="Calculate SPRS Score",
-    description="Calculate the DoD Supplier Performance Risk System (SPRS) score based on current control implementation status. Score ranges from -203 to 110."
+    description="Calculate the DoD Supplier Performance Risk System (SPRS) score based on current control implementation status. Score ranges from -203 to 110.",
 )
 async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ControlRecord))
@@ -153,7 +190,12 @@ async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
 
         if status == "implemented":
             implemented_count += 1
-        elif status in ["not_implemented", "not_started", "partially_implemented", "partial"]:
+        elif status in [
+            "not_implemented",
+            "not_started",
+            "partially_implemented",
+            "partial",
+        ]:
             not_implemented_count += 1
             deduction = SPRS_DEDUCTIONS.get(cid, 1)
             sprs -= deduction
@@ -176,10 +218,13 @@ async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
         controls_not_implemented=not_implemented_count,
         deductions=deductions_list,
         certification_level=cert_level,
-        assessment_date=datetime.now(UTC).date().isoformat()
+        assessment_date=datetime.now(UTC).date().isoformat(),
     )
 
-@router.post("/promote/{run_id}", summary="Promote agent findings to official assessment records")
+
+@router.post(
+    "/promote/{run_id}", summary="Promote agent findings to official assessment records"
+)
 async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
     """Convert an agent execution run into official assessment records."""
     query = select(AgentRunRecord).where(AgentRunRecord.id == run_id)
@@ -205,7 +250,12 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
                 evidence_ids=[res["evidence_id"]],
                 assessor=f"Agent: {run.agent_type}",
                 assessment_date=datetime.now(UTC),
-                poam_required="true" if res["status"] in ["partial", "not_implemented", "partially_implemented"] else "false"
+                poam_required=(
+                    "true"
+                    if res["status"]
+                    in ["partial", "not_implemented", "partially_implemented"]
+                    else "false"
+                ),
             )
             db.add(new_ass)
             promoted_count += 1
@@ -228,10 +278,18 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
                 evidence_ids=[findings.get("image_scan", {}).get("evidence_id")],
                 assessor=f"Agent: {run.agent_type}",
                 assessment_date=datetime.now(UTC),
-                poam_required="true" if status in ["partial", "not_implemented", "partially_implemented"] else "false"
+                poam_required=(
+                    "true"
+                    if status in ["partial", "not_implemented", "partially_implemented"]
+                    else "false"
+                ),
             )
             db.add(new_ass)
             promoted_count += 1
 
     await db.commit()
-    return {"status": "promoted", "run_id": run_id, "assessments_created": promoted_count}
+    return {
+        "status": "promoted",
+        "run_id": run_id,
+        "assessments_created": promoted_count,
+    }

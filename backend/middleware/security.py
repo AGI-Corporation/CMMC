@@ -1,5 +1,6 @@
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi import Request, Response
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
@@ -7,6 +8,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     This provides defense-in-depth protection against clickjacking,
     MIME-type sniffing, and other common web vulnerabilities.
     """
+
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
 
@@ -32,7 +34,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "frame-ancestors 'none';"
         )
 
-        # HTTP Strict Transport Security: Enforce HTTPS
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # HSTS (Strict-Transport-Security) - only if not in development
+        # For now, we'll omit it as we are in a dev environment and don't have HTTPS
 
         return response
