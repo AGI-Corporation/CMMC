@@ -1,10 +1,12 @@
 """
 Pydantic models for CMMC Controls
 """
-from pydantic import BaseModel, Field
-from typing import Optional, List
+
+from datetime import UTC, datetime
 from enum import Enum
-from datetime import datetime, UTC
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class CMMCLevel(str, Enum):
@@ -41,15 +43,26 @@ class ImplementationStatus(str, Enum):
 
 class Control(BaseModel):
     """CMMC Control - aligned with OSCAL catalog model."""
+
     id: str = Field(..., description="Control ID (e.g., AC.1.001)")
     title: str = Field(..., description="Control title")
     description: str = Field(..., description="Control description / requirement")
     domain: ControlDomain = Field(..., description="Control domain / family")
-    level: CMMCLevel = Field(..., description="Minimum CMMC level requiring this control")
-    nist_mapping: Optional[str] = Field(None, description="Mapped NIST SP 800-171 control ID")
-    discussion: Optional[str] = Field(None, description="CMMC discussion / implementation guidance")
-    assessment_objectives: Optional[List[str]] = Field(default_factory=list, description="Assessment objectives")
-    weight: int = Field(default=1, description="SPRS point weight (deducted if not implemented)")
+    level: CMMCLevel = Field(
+        ..., description="Minimum CMMC level requiring this control"
+    )
+    nist_mapping: Optional[str] = Field(
+        None, description="Mapped NIST SP 800-171 control ID"
+    )
+    discussion: Optional[str] = Field(
+        None, description="CMMC discussion / implementation guidance"
+    )
+    assessment_objectives: Optional[List[str]] = Field(
+        default_factory=list, description="Assessment objectives"
+    )
+    weight: int = Field(
+        default=1, description="SPRS point weight (deducted if not implemented)"
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     class Config:
@@ -61,13 +74,14 @@ class Control(BaseModel):
                 "domain": "AC",
                 "level": "Level 1",
                 "nist_mapping": "3.1.1",
-                "weight": 5
+                "weight": 5,
             }
         }
 
 
 class ControlResponse(BaseModel):
     """API response wrapper for a single control."""
+
     control: Control
     implementation_status: Optional[ImplementationStatus] = None
     evidence_count: int = 0
@@ -78,6 +92,7 @@ class ControlResponse(BaseModel):
 
 class ControlListResponse(BaseModel):
     """API response for list of controls."""
+
     controls: List[ControlResponse]
     total: int
     level_filter: Optional[CMMCLevel] = None
@@ -86,6 +101,7 @@ class ControlListResponse(BaseModel):
 
 class ControlUpdate(BaseModel):
     """Request body for updating control implementation status."""
+
     implementation_status: ImplementationStatus
     notes: Optional[str] = None
     responsible_party: Optional[str] = None

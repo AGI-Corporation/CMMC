@@ -1,20 +1,24 @@
+import uuid
+from datetime import UTC, datetime
 
 import pytest
-from httpx import AsyncClient, ASGITransport
-from backend.main import app
-from backend.db.database import init_db, engine, Base, AssessmentRecord
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-import uuid
-from datetime import datetime, UTC
+
+from backend.db.database import AssessmentRecord, Base, engine, init_db
+from backend.main import app
+
 
 @pytest.fixture(scope="session")
 def anyio_backend():
     return "asyncio"
 
+
 @pytest.fixture(scope="module", autouse=True)
 async def setup_db():
     # Use a separate test database for this module
     import os
+
     os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_ux.db"
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -22,20 +26,21 @@ async def setup_db():
 
     # Add some sample assessments with different confidence/status
     from backend.db.database import AsyncSessionLocal
+
     async with AsyncSessionLocal() as session:
         a1 = AssessmentRecord(
             id=str(uuid.uuid4()),
             control_id="AC.1.001",
             status="implemented",
             confidence=1.0,
-            assessment_date=datetime.now(UTC)
+            assessment_date=datetime.now(UTC),
         )
         a2 = AssessmentRecord(
             id=str(uuid.uuid4()),
             control_id="AC.1.002",
             status="partial",
             confidence=0.5,
-            assessment_date=datetime.now(UTC)
+            assessment_date=datetime.now(UTC),
         )
         session.add_all([a1, a2])
         await session.commit()
@@ -45,9 +50,12 @@ async def setup_db():
     if os.path.exists("./test_ux.db"):
         os.remove("./test_ux.db")
 
+
 @pytest.mark.anyio
 async def test_ssp_ux_elements():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.get("/api/reports/ssp")
         assert resp.status_code == 200
         content = resp.text
