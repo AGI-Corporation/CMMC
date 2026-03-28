@@ -11,7 +11,16 @@ import json
 import uuid
 from datetime import datetime, UTC
 from typing import Optional, List, Dict, Any
-from mistralai import Mistral
+try:
+    from mistralai import Mistral as _MistralClient
+    _MISTRAL_SDK_V1 = True
+except ImportError:
+    try:
+        from mistralai.client import MistralClient as _MistralClient  # type: ignore[assignment]
+        _MISTRAL_SDK_V1 = False
+    except ImportError:
+        _MistralClient = None  # type: ignore[assignment,misc]
+        _MISTRAL_SDK_V1 = False
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.database import AgentRunRecord, get_db
@@ -44,7 +53,7 @@ class MistralComplianceAgent:
                 self.client = None
                 print("Warning: MISTRAL_API_KEY not set. Mistral agent will operate in mock mode.")
             else:
-                self.client = Mistral(api_key=MISTRAL_API_KEY)
+                self.client = _MistralClient(api_key=MISTRAL_API_KEY) if _MistralClient else None
             self.model = MISTRAL_MODEL
             self.code_model = MISTRAL_CODE_MODEL
             self.use_mistral_client = True

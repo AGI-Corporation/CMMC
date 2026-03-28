@@ -15,6 +15,7 @@ import json
 import os
 
 from backend.routers import controls, assessment, evidence, reports
+from backend.routers import blockchain as blockchain_router
 from agents.orchestrator import agent as orchestrator
 from agents.icam_agent import agent as icam
 from agents.devsecops_agent import agent as devsecops
@@ -65,6 +66,7 @@ app.include_router(controls.router, prefix="/api/controls", tags=["Controls"])
 app.include_router(assessment.router, prefix="/api/assessment", tags=["Assessment"])
 app.include_router(evidence.router, prefix="/api/evidence", tags=["Evidence"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
+app.include_router(blockchain_router.router, prefix="/api/blockchain", tags=["Blockchain"])
 
 # Agent Routers
 app.include_router(orchestrator.router, prefix="/api/orchestrator", tags=["Orchestrator"])

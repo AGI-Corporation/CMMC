@@ -6,7 +6,7 @@ import os
 import json
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, select
+from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, Boolean, select, func
 from datetime import datetime, UTC
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./cmmc.db")
@@ -39,6 +39,10 @@ class ControlRecord(Base):
     score_value = Column(Integer, default=1)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    # Blockchain attestation tracking
+    last_attestation_tx_id = Column(String, nullable=True)
+    attestation_block_height = Column(Integer, nullable=True)
+    blockchain_synced_at = Column(DateTime, nullable=True)
 
 
 class EvidenceRecord(Base):
@@ -56,6 +60,10 @@ class EvidenceRecord(Base):
     review_cycle_days = Column(Integer, default=365)
     metadata_ = Column("metadata", JSON, default=dict)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    # Blockchain integrity fields
+    sha256_hash = Column(String, nullable=True)      # SHA-256 of evidence content
+    evidence_anchor_tx_id = Column(String, nullable=True)  # On-chain registration TX
+    ipfs_cid = Column(String, nullable=True)         # Optional IPFS content ID
 
 
 class AssessmentRecord(Base):
@@ -85,6 +93,25 @@ class AgentRunRecord(Base):
     mistral_model = Column(String)  # mistral model used for this run
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime)
+
+
+class BlockchainTransaction(Base):
+    """Immutable ledger of all on-chain compliance events."""
+    __tablename__ = "blockchain_transactions"
+    id = Column(String, primary_key=True, index=True)          # TX UUID
+    tx_type = Column(String, index=True)                       # attestation | sprs_anchor | evidence | assessment
+    org_id = Column(String, index=True)                        # Originating org / MSP identity
+    control_id = Column(String, nullable=True, index=True)     # Linked control (if applicable)
+    evidence_id = Column(String, nullable=True)                # Linked evidence (if applicable)
+    payload_hash = Column(String)                              # SHA-256 of the serialised payload
+    previous_tx_hash = Column(String, nullable=True)           # Previous TX hash — forms the chain
+    block_height = Column(Integer, index=True)                 # Monotonic counter (simulated block)
+    status = Column(String, default="confirmed")               # pending | confirmed | failed
+    payload = Column(JSON, default=dict)                       # Full TX payload (no CUI)
+    signature = Column(String, nullable=True)                  # HMAC-SHA256 platform signature
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    confirmed_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
 
 
 async def init_db():
@@ -126,3 +153,38 @@ async def get_db():
             raise
         finally:
             await session.close()
+
+
+async def get_latest_assessments(db: AsyncSession, control_ids: list[str] | None = None) -> dict:
+    """Return {control_id: AssessmentRecord} map for the latest assessment per control.
+
+    Args:
+        db: Async DB session.
+        control_ids: Optional list of control IDs to limit the query.
+    """
+    sub_q = (
+        select(
+            AssessmentRecord.control_id,
+            func.max(AssessmentRecord.assessment_date).label("max_date"),
+        )
+        .group_by(AssessmentRecord.control_id)
+        .subquery()
+    )
+    query = select(AssessmentRecord).join(
+        sub_q,
+        (AssessmentRecord.control_id == sub_q.c.control_id)
+        & (AssessmentRecord.assessment_date == sub_q.c.max_date),
+    )
+    if control_ids:
+        query = query.where(AssessmentRecord.control_id.in_(control_ids))
+    result = await db.execute(query)
+    return {a.control_id: a for a in result.scalars().all()}
+
+
+async def get_next_block_height(db: AsyncSession) -> int:
+    """Return the next monotonic block height for the blockchain ledger."""
+    result = await db.execute(
+        select(func.max(BlockchainTransaction.block_height))
+    )
+    current_max = result.scalar()
+    return (current_max or 0) + 1

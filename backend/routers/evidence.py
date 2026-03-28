@@ -5,6 +5,7 @@ AGI Corporation 2026
 Handles CMMC evidence artifact CRUD - REST and MCP tool.
 Evidence types: log, scan, policy, diagram, screenshot, report, configuration.
 All evidence records include ZT pillar, capability ID, and control mappings.
+Evidence content is automatically SHA-256 hashed on creation for blockchain integrity.
 """
 import uuid
 from fastapi import APIRouter, HTTPException, Depends
@@ -15,6 +16,7 @@ from datetime import datetime, UTC
 
 from backend.db.database import get_db, EvidenceRecord
 from backend.models.evidence import EvidenceCreate, EvidenceResponse, EvidenceListResponse
+from backend.services.blockchain_service import compute_sha256_for_content
 
 router = APIRouter()
 
@@ -29,6 +31,9 @@ async def create_evidence(
     Associate an evidence artifact with a CMMC control.
     Required fields: control_id, zt_pillar, evidence_type, title, source_system.
     """
+    content_for_hash = f"{evidence.control_id}|{evidence.title}|{evidence.description}|{evidence.source_system}|{evidence.uri or ''}|{datetime.now(UTC).isoformat()}"
+    sha256 = compute_sha256_for_content(content_for_hash)
+
     record = EvidenceRecord(
         id=str(uuid.uuid4()),
         control_id=evidence.control_id,
@@ -43,6 +48,7 @@ async def create_evidence(
         review_cycle_days=evidence.review_cycle_days,
         metadata_=evidence.metadata or {},
         created_at=datetime.now(UTC),
+        sha256_hash=sha256,
     )
     db.add(record)
     await db.flush()
