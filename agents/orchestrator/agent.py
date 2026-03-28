@@ -16,8 +16,9 @@ from enum import Enum
 from dataclasses import dataclass, field
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import get_db, AgentRunRecord, ControlRecord, AssessmentRecord
-from sqlalchemy import select, func
+from backend.db.database import get_db, AgentRunRecord, ControlRecord, AssessmentRecord, get_latest_assessments
+from backend.constants import SPRS_DEDUCTIONS
+from sqlalchemy import select
 
 class AgentType(str, Enum):
     ICAM = "icam"                     # Identity/Credential/Access Mgmt
@@ -84,18 +85,6 @@ class ComplianceOrchestrator:
         "Automation & Orchestration": ["IR", "SI", "CA"],
     }
 
-    # SPRS point deductions per control (from DoD assessment methodology)
-    # Total possible score = 110 points
-    SPRS_DEDUCTIONS = {
-        # High value controls (5 points each)
-        "AC.2.006": 5, "AC.2.007": 5, "AC.3.017": 5, "AC.3.018": 5,
-        "IA.3.083": 5, "IA.3.084": 5, "SC.3.177": 5,
-        # Medium value controls (3 points each)
-        "AC.1.001": 3, "AC.1.002": 3, "IA.1.076": 3, "IA.1.077": 3,
-        "SC.1.175": 3, "SC.1.176": 3, "SI.1.210": 3, "SI.1.211": 3,
-        "SI.1.212": 3, "SI.1.213": 3,
-    }
-
     def __init__(self):
         self.control_registry: Dict[str, ControlStatus] = {}
         self.task_queue: List[Task] = []
@@ -131,26 +120,6 @@ class ComplianceOrchestrator:
         self.task_queue.append(task)
         return task
 
-    async def _get_latest_assessments(self, db: AsyncSession):
-        sub_q = (
-            select(
-                AssessmentRecord.control_id,
-                func.max(AssessmentRecord.assessment_date).label("max_date")
-            )
-            .group_by(AssessmentRecord.control_id)
-            .subquery()
-        )
-        query = (
-            select(AssessmentRecord)
-            .join(
-                sub_q,
-                (AssessmentRecord.control_id == sub_q.c.control_id) &
-                (AssessmentRecord.assessment_date == sub_q.c.max_date)
-            )
-        )
-        result = await db.execute(query)
-        return {a.control_id: a for a in result.scalars().all()}
-
     async def compute_sprs_score(self, db: AsyncSession) -> Dict[str, Any]:
         """Compute SPRS score using methodology from assessment.py."""
         result = await db.execute(select(ControlRecord))
@@ -159,7 +128,7 @@ class ComplianceOrchestrator:
         deductions_list = []
         implemented_count = not_implemented_count = 0
 
-        assessments_map = await self._get_latest_assessments(db)
+        assessments_map = await get_latest_assessments(db)
 
         for c in controls:
             cid = c.id
@@ -170,7 +139,7 @@ class ComplianceOrchestrator:
                 implemented_count += 1
             elif status in ["not_implemented", "not_started", "partially_implemented"]:
                 not_implemented_count += 1
-                deduction = self.SPRS_DEDUCTIONS.get(cid, 1)
+                deduction = SPRS_DEDUCTIONS.get(cid, 1)
                 sprs -= deduction
                 deductions_list.append({"control_id": cid, "deduction": deduction})
 
@@ -186,7 +155,7 @@ class ComplianceOrchestrator:
     async def compute_zt_scorecard(self, db: AsyncSession) -> List[Dict[str, Any]]:
         """Generate per-ZT-pillar maturity scorecard from database."""
         scorecard = []
-        assessments_map = await self._get_latest_assessments(db)
+        assessments_map = await get_latest_assessments(db)
 
         for pillar, domains in self.ZT_DOMAIN_MAP.items():
             query = select(ControlRecord).where(ControlRecord.domain.in_(domains))
