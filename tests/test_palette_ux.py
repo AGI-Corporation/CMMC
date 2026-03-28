@@ -3,9 +3,9 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from backend.main import app
 from backend.db.database import init_db, engine, Base, AssessmentRecord
-from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 from datetime import datetime, UTC
+import os
 
 @pytest.fixture(scope="session")
 def anyio_backend():
@@ -14,7 +14,6 @@ def anyio_backend():
 @pytest.fixture(scope="module", autouse=True)
 async def setup_db():
     # Use a separate test database for this module
-    import os
     os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_ux.db"
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -47,21 +46,24 @@ async def setup_db():
 
 @pytest.mark.anyio
 async def test_ssp_ux_elements():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         resp = await ac.get("/api/reports/ssp")
         assert resp.status_code == 200
         content = resp.text
 
-        # Check for progress bar characters
+        # Check for Overall Progress line
+        assert "Overall Progress" in content
         assert "█" in content or "░" in content
-        assert "Overall Compliance" in content
 
-        # Check for emojis
+        # Check for emojis in summary table
+        # We expect rows like: | Implemented | ✅ 1 |
         assert "✅" in content
         assert "🟡" in content
 
-        # Check for confidence stars
+        # Check for confidence stars in Findings
         # 1.0 confidence should have 5 stars: ⭐⭐⭐⭐⭐
         assert "⭐⭐⭐⭐⭐" in content
-        # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
+        # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆
         assert "⭐⭐⭐☆☆" in content

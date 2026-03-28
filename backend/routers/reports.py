@@ -15,7 +15,7 @@ import csv
 import io
 import json
 
-from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord, get_latest_assessments
+from backend.db.database import get_db, AssessmentRecord, ControlRecord, EvidenceRecord
 
 router = APIRouter()
 
@@ -45,7 +45,7 @@ def get_progress_bar(percentage: float, length: int = 15) -> str:
     """Generate a Markdown-compatible progress bar."""
     filled = int(percentage / 100 * length)
     bar = "█" * filled + "░" * (length - filled)
-    return f"`{bar}` {percentage:.1f}%"
+    return f"`{bar}`"
 
 
 async def get_latest_assessments(db: AsyncSession):
@@ -83,8 +83,7 @@ async def generate_ssp(
     Includes: system overview, control family summaries, implementation status.
     """
     # Fetch latest assessments
-    assessments_dict = await get_latest_assessments(db)
-    assessments = list(assessments_dict.values())
+    assessments = await get_latest_assessments(db)
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
@@ -99,9 +98,9 @@ async def generate_ssp(
     sprs_estimate = 110 - (status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5)
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
-    total_controls_count = len(controls)
-    compliance_pct = (status_counts["implemented"] / total_controls_count * 100) if total_controls_count > 0 else 0
-    progress_bar = get_progress_bar(compliance_pct)
+    total_ctrls = len(controls)
+    impl_pct = (status_counts["implemented"] / total_ctrls * 100) if total_ctrls > 0 else 0
+    p_bar = get_progress_bar(impl_pct)
 
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
@@ -110,7 +109,7 @@ async def generate_ssp(
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
 **Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
 **SPRS Score Estimate:** {sprs_estimate}  
-**Overall Progress:** {get_progress_bar(implemented_pct)} {implemented_pct:.1f}%
+**Overall Progress:** {p_bar} {impl_pct:.1f}%
 
 ---
 
@@ -122,7 +121,7 @@ async def generate_ssp(
 | Owner | AGI Corporation |
 | Classification | {classification} |
 | Assessment Date | {date.today()} |
-| Total Controls | {total_controls} |
+| Total Controls | {total_ctrls} |
 | Implemented | {get_status_emoji('implemented')} {status_counts['implemented']} |
 | Partial | {get_status_emoji('partial')} {status_counts['partial']} |
 | Planned | {get_status_emoji('planned')} {status_counts['planned']} |
@@ -147,14 +146,15 @@ async def generate_ssp(
 
 """
 
-    for a in assessments[:20]:  # Limit for readability
+    for a in assessments:
         ctrl = controls.get(a.control_id)
         ctrl_title = ctrl.title if ctrl else "Unknown"
-        status_display = f"{get_status_emoji(a.status)} {a.status.replace('_', ' ').title()}"
-        confidence_display = f"{get_confidence_stars(a.confidence)} ({a.confidence:.0%})"
+        s_emoji = get_status_emoji(a.status)
+        s_text = a.status.replace('_', ' ').title()
+        c_stars = f"{get_confidence_stars(a.confidence)} ({a.confidence:.0%})"
         ssp += f"""### {a.control_id} - {ctrl_title}
-- **Status:** {status_display}
-- **Confidence:** {confidence_display}
+- **Status:** {s_emoji} {s_text}
+- **Confidence:** {c_stars}
 - **Notes:** {a.notes or 'None'}
 - **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}
 
@@ -183,8 +183,7 @@ async def generate_poam(
     Generate a Plan of Action & Milestones (POA&M) as CSV.
     Includes all partial and not_implemented controls.
     """
-    assessments_dict = await get_latest_assessments(db)
-    assessments = list(assessments_dict.values())
+    assessments = await get_latest_assessments(db)
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
@@ -227,8 +226,7 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Return compliance posture summary for dashboard rendering."""
-    assessments_dict = await get_latest_assessments(db)
-    assessments = list(assessments_dict.values())
+    assessments = await get_latest_assessments(db)
 
     status_counts = {"implemented": 0, "partial": 0, "planned": 0, "not_implemented": 0, "na": 0}
 
