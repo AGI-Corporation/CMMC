@@ -8,6 +8,7 @@ implementation evidence, and produce POAM recommendations.
 """
 import os
 import json
+import logging
 import uuid
 from datetime import datetime, UTC
 from typing import Optional, List, Dict, Any
@@ -22,6 +23,9 @@ MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
 MISTRAL_CODE_MODEL = os.getenv("MISTRAL_CODE_MODEL", "codestral-latest")
 MISTRAL_LOCAL_MODEL = os.getenv("MISTRAL_LOCAL_MODEL", "mistral")
 USE_LOCAL = os.getenv("USE_LOCAL_MODEL", "false").lower() == "true"
+
+
+_logger = logging.getLogger(__name__)
 
 
 class MistralComplianceAgent:
@@ -42,7 +46,7 @@ class MistralComplianceAgent:
         else:
             if not MISTRAL_API_KEY:
                 self.client = None
-                print("Warning: MISTRAL_API_KEY not set. Mistral agent will operate in mock mode.")
+                _logger.warning("MISTRAL_API_KEY not set. Mistral agent will operate in mock mode.")
             else:
                 self.client = Mistral(api_key=MISTRAL_API_KEY)
             self.model = MISTRAL_MODEL
