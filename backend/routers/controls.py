@@ -2,30 +2,39 @@
 CMMC Controls Router - FastAPI endpoints for control management.
 These endpoints are automatically exposed as MCP tools via fastapi-mcp.
 """
-from fastapi import APIRouter, HTTPException, Query, Depends
-from typing import Optional, List
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
-from backend.db.database import get_db, ControlRecord, AssessmentRecord, get_latest_assessments
-from backend.models.control import (
-    Control, ControlResponse, ControlListResponse,
-    ControlUpdate, CMMCLevel, ControlDomain, ImplementationStatus
-)
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.db.database import (AssessmentRecord, ControlRecord, get_db,
+                                 get_latest_assessments)
+from backend.models.control import (CMMCLevel, Control, ControlDomain,
+                                    ControlListResponse, ControlResponse,
+                                    ControlUpdate, ImplementationStatus)
 
 router = APIRouter()
+
 
 @router.get(
     "/",
     response_model=ControlListResponse,
     summary="List CMMC Controls",
-    description="List all CMMC controls, optionally filtered by level or domain. Returns controls with current implementation status."
+    description="List all CMMC controls, optionally filtered by level or domain. Returns controls with current implementation status.",
 )
 async def list_controls(
-    level: Optional[CMMCLevel] = Query(None, description="Filter by CMMC level (Level 1, Level 2, Level 3)"),
-    domain: Optional[ControlDomain] = Query(None, description="Filter by control domain (AC, AU, CM, etc.)"),
-    status: Optional[ImplementationStatus] = Query(None, description="Filter by implementation status"),
-    db: AsyncSession = Depends(get_db)
+    level: Optional[CMMCLevel] = Query(
+        None, description="Filter by CMMC level (Level 1, Level 2, Level 3)"
+    ),
+    domain: Optional[ControlDomain] = Query(
+        None, description="Filter by control domain (AC, AU, CM, etc.)"
+    ),
+    status: Optional[ImplementationStatus] = Query(
+        None, description="Filter by implementation status"
+    ),
+    db: AsyncSession = Depends(get_db),
 ):
     # Base query for controls
     query = select(ControlRecord)
@@ -41,7 +50,9 @@ async def list_controls(
     control_ids = [c.id for c in controls_data]
 
     # Optimization: Use shared helper with ID filtering
-    assessments_map = await get_latest_assessments(db, control_ids=control_ids) if control_ids else {}
+    assessments_map = (
+        await get_latest_assessments(db, control_ids=control_ids) if control_ids else {}
+    )
 
     responses = []
     for c in controls_data:
@@ -51,31 +62,44 @@ async def list_controls(
         if status and impl_status != status.value:
             continue
 
-        responses.append(ControlResponse(
-            control=Control(
-                id=c.id,
-                title=c.title,
-                description=c.description,
-                domain=c.domain,
-                level=c.level,
-                nist_mapping=c.nist_mapping,
-                weight=c.score_value
-            ),
-            implementation_status=impl_status,
-            evidence_count=len(assessment.evidence_ids) if assessment and isinstance(assessment.evidence_ids, list) else 0,
-            notes=assessment.notes if assessment else None,
-            confidence=assessment.confidence if assessment else 0.0,
-            poam_required=(assessment.poam_required == "true") if assessment else False
-        ))
+        responses.append(
+            ControlResponse(
+                control=Control(
+                    id=c.id,
+                    title=c.title,
+                    description=c.description,
+                    domain=c.domain,
+                    level=c.level,
+                    nist_mapping=c.nist_mapping,
+                    weight=c.score_value,
+                ),
+                implementation_status=impl_status,
+                evidence_count=(
+                    len(assessment.evidence_ids)
+                    if assessment and isinstance(assessment.evidence_ids, list)
+                    else 0
+                ),
+                notes=assessment.notes if assessment else None,
+                confidence=assessment.confidence if assessment else 0.0,
+                poam_required=(
+                    (assessment.poam_required == "true") if assessment else False
+                ),
+            )
+        )
 
-    return ControlListResponse(controls=responses, total=len(responses), level_filter=level, domain_filter=domain)
+    return ControlListResponse(
+        controls=responses,
+        total=len(responses),
+        level_filter=level,
+        domain_filter=domain,
+    )
 
 
 @router.get(
     "/{control_id}",
     response_model=ControlResponse,
     summary="Get Control Detail",
-    description="Get full details of a specific CMMC control by its ID (e.g., AC.1.001)."
+    description="Get full details of a specific CMMC control by its ID (e.g., AC.1.001).",
 )
 async def get_control_detail(control_id: str, db: AsyncSession = Depends(get_db)):
     query = select(ControlRecord).where(ControlRecord.id == control_id)
@@ -85,7 +109,11 @@ async def get_control_detail(control_id: str, db: AsyncSession = Depends(get_db)
     if not c:
         raise HTTPException(status_code=404, detail=f"Control {control_id} not found")
 
-    a_query = select(AssessmentRecord).where(AssessmentRecord.control_id == control_id).order_by(AssessmentRecord.assessment_date.desc())
+    a_query = (
+        select(AssessmentRecord)
+        .where(AssessmentRecord.control_id == control_id)
+        .order_by(AssessmentRecord.assessment_date.desc())
+    )
     a_result = await db.execute(a_query)
     assessment = a_result.scalars().first()
 
@@ -97,13 +125,17 @@ async def get_control_detail(control_id: str, db: AsyncSession = Depends(get_db)
             domain=c.domain,
             level=c.level,
             nist_mapping=c.nist_mapping,
-            weight=c.score_value
+            weight=c.score_value,
         ),
         implementation_status=assessment.status if assessment else "not_started",
-        evidence_count=len(assessment.evidence_ids) if assessment and isinstance(assessment.evidence_ids, list) else 0,
+        evidence_count=(
+            len(assessment.evidence_ids)
+            if assessment and isinstance(assessment.evidence_ids, list)
+            else 0
+        ),
         notes=assessment.notes if assessment else None,
         confidence=assessment.confidence if assessment else 0.0,
-        poam_required=(assessment.poam_required == "true") if assessment else False
+        poam_required=(assessment.poam_required == "true") if assessment else False,
     )
 
 
@@ -111,9 +143,11 @@ async def get_control_detail(control_id: str, db: AsyncSession = Depends(get_db)
     "/{control_id}",
     response_model=ControlResponse,
     summary="Update Control Assessment Status",
-    description="Update the implementation status, notes, and responsible party for a CMMC control."
+    description="Update the implementation status, notes, and responsible party for a CMMC control.",
 )
-async def update_control_status(control_id: str, update: ControlUpdate, db: AsyncSession = Depends(get_db)):
+async def update_control_status(
+    control_id: str, update: ControlUpdate, db: AsyncSession = Depends(get_db)
+):
     query = select(ControlRecord).where(ControlRecord.id == control_id)
     result = await db.execute(query)
     c = result.scalar_one_or_none()
@@ -122,7 +156,7 @@ async def update_control_status(control_id: str, update: ControlUpdate, db: Asyn
         raise HTTPException(status_code=404, detail=f"Control {control_id} not found")
 
     import uuid
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
 
     new_assessment = AssessmentRecord(
         id=str(uuid.uuid4()),
@@ -134,7 +168,7 @@ async def update_control_status(control_id: str, update: ControlUpdate, db: Asyn
         assessment_date=datetime.now(UTC),
         evidence_ids=update.evidence_ids or [],
         confidence=update.confidence or 0.0,
-        poam_required="true" if update.poam_required else "false"
+        poam_required="true" if update.poam_required else "false",
     )
     db.add(new_assessment)
     await db.commit()
@@ -147,12 +181,12 @@ async def update_control_status(control_id: str, update: ControlUpdate, db: Asyn
             domain=c.domain,
             level=c.level,
             nist_mapping=c.nist_mapping,
-            weight=c.score_value
+            weight=c.score_value,
         ),
         implementation_status=update.implementation_status,
         notes=update.notes,
         confidence=new_assessment.confidence,
-        poam_required=update.poam_required
+        poam_required=update.poam_required,
     )
 
 
@@ -160,7 +194,9 @@ async def update_control_status(control_id: str, update: ControlUpdate, db: Asyn
     "/domain/{domain}",
     response_model=ControlListResponse,
     summary="Get Controls by Domain",
-    description="Get all CMMC controls for a specific domain (e.g., AC for Access Control)."
+    description="Get all CMMC controls for a specific domain (e.g., AC for Access Control).",
 )
-async def get_controls_by_domain(domain: ControlDomain, db: AsyncSession = Depends(get_db)):
+async def get_controls_by_domain(
+    domain: ControlDomain, db: AsyncSession = Depends(get_db)
+):
     return await list_controls(domain=domain, db=db)
