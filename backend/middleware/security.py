@@ -22,8 +22,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Enforce HTTPS (HSTS) - 1 year
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
-        # Content Security Policy - restrict where the site can be embedded
-        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        # Content Security Policy - restrict where the site can be embedded and where resources can be loaded from
+        # default-src 'self' allows resources from the same origin
+        # script-src 'self' 'unsafe-inline' allows scripts from the same origin and inline scripts (needed for Swagger UI)
+        # style-src 'self' 'unsafe-inline' allows styles from the same origin and inline styles (needed for Swagger UI)
+        # img-src 'self' data: allows images from the same origin and data URIs
+        # frame-ancestors 'none' prevents the site from being embedded in an iframe
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "frame-ancestors 'none';"
+        )
 
         # Referrer Policy - only send referrer for same-origin requests
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
