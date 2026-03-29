@@ -259,6 +259,8 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Return compliance posture summary for dashboard rendering."""
+    # Optimization: Use shared helper with ID filtering if possible,
+    # but here we need all latest assessments for the dashboard summary.
     assessments_dict = await get_latest_assessments(db)
     assessments = list(assessments_dict.values())
 
