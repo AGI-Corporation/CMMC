@@ -64,7 +64,7 @@ async def generate_ssp(
     """
     # Fetch latest assessments
     assessments_dict = await get_latest_assessments(db)
-    assessments = list(assessments_dict.values())
+    assessments = sorted(list(assessments_dict.values()), key=lambda x: x.control_id)
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
 
@@ -75,6 +75,7 @@ async def generate_ssp(
         "planned": 0,
         "not_implemented": 0,
         "na": 0,
+        "not_started": 0,
     }
     for a in assessments:
         if a.status in status_counts:
@@ -83,6 +84,8 @@ async def generate_ssp(
             status_counts["partial"] += 1
 
     total_controls = len(controls)
+    status_counts["not_started"] = max(0, total_controls - len(assessments))
+
     implemented_pct = (
         (status_counts["implemented"] / total_controls * 100)
         if total_controls > 0
@@ -93,14 +96,6 @@ async def generate_ssp(
         status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5
     )
     sprs_estimate = max(-203, round(sprs_estimate, 0))
-
-    total_controls_count = len(controls)
-    compliance_pct = (
-        (status_counts["implemented"] / total_controls_count * 100)
-        if total_controls_count > 0
-        else 0
-    )
-    progress_bar = get_progress_bar(compliance_pct)
 
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
@@ -134,6 +129,7 @@ async def generate_ssp(
 | Partial | {get_status_emoji('partial')} {status_counts['partial']} |
 | Planned | {get_status_emoji('planned')} {status_counts['planned']} |
 | Not Implemented | {get_status_emoji('not_implemented')} {status_counts['not_implemented']} |
+| Not Started | {get_status_emoji('not_started')} {status_counts['not_started']} |
 | N/A | {get_status_emoji('na')} {status_counts['na']} |
 
 ## 2. Control Implementation Summary
@@ -142,13 +138,33 @@ async def generate_ssp(
 
 | ZT Pillar | CMMC Domains | Status |
 |-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
+"""
+
+    zt_mapping = [
+        ("User", ["AC", "IA", "PS"]),
+        ("Device", ["CM", "MA", "PE"]),
+        ("Network", ["SC", "AC"]),
+        ("Application", ["CM", "CA", "SI"]),
+        ("Data", ["MP", "SC", "AU"]),
+        ("Visibility & Analytics", ["AU", "IR", "RA"]),
+        ("Automation & Orchestration", ["IR", "SI", "CA"]),
+    ]
+
+    for pillar, domains in zt_mapping:
+        pillar_controls = [c for c in controls.values() if c.domain in domains]
+        if not pillar_controls:
+            status = get_progress_bar(0)
+        else:
+            pillar_implemented = 0
+            for pc in pillar_controls:
+                pa = assessments_dict.get(pc.id)
+                if pa and pa.status == "implemented":
+                    pillar_implemented += 1
+            pct = (pillar_implemented / len(pillar_controls)) * 100
+            status = get_progress_bar(pct)
+        ssp += f"| {pillar} | {', '.join(domains)} | {status} |\n"
+
+    ssp += """
 
 ## 3. Assessment Findings
 
@@ -170,6 +186,7 @@ async def generate_ssp(
 - **Confidence:** {confidence_display}
 - **Notes:** {a.notes or 'None'}
 - **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}
+- [↑ Back to Top](#system-security-plan-ssp)
 
 """
 
