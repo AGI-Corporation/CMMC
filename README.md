@@ -188,7 +188,80 @@ Once the server is running, the following MCP tools are available to AI agents:
 
 ---
 
-## Key Resources
+## FHIR Evidence Integration (BabelFHIR-TS)
+
+Healthcare DIB contractors using FHIR® R4 can feed their clinical system
+artifacts directly into the CMMC compliance engine as machine-readable evidence.
+
+### How it works
+
+```
+FHIR EHR System
+    │  AuditEvent / Device / Consent / Observation …
+    ▼
+POST /api/fhir/ingest           ← Python FastAPI backend
+    │  ┌─────────────────────────────────────────┐
+    │  │  Optional: BabelFHIR-TS validation      │
+    │  │  sidecar  (fhir-service/, port 3100)    │
+    │  │  @babelfhir-ts/client-r4  +  FHIRPath   │
+    │  └─────────────────────────────────────────┘
+    │
+    ▼
+EvidenceRecord rows  ──►  CMMC Assessment Dashboard
+```
+
+### FHIR → CMMC control mapping
+
+| FHIR Resource Type | CMMC Controls | ZT Pillar |
+|---|---|---|
+| `AuditEvent` | AU.2.041, AU.2.042, AU.2.043, AU.3.045, AU.3.046, AU.3.048 | Visibility & Analytics |
+| `Consent` | AC.2.006, AC.2.007, AC.3.018 | User |
+| `Device` | CM.2.061, CM.2.062, CM.3.068 | Device |
+| `DocumentReference` | AU.3.046, AU.3.048 | Visibility & Analytics |
+| `Observation` | RA.2.141, RA.2.142 | Visibility & Analytics |
+| `Patient` | AC.1.001, AC.1.002 | User |
+| `Practitioner` | IA.1.076, IA.1.077, IA.3.083 | User |
+| `PractitionerRole` | IA.1.076, IA.1.077, AC.2.007 | User |
+| `Communication` | SC.1.175, SC.1.176, SC.3.177 | Network |
+| `OperationOutcome` | SI.1.210, SI.1.211 | Application |
+
+Full mapping reference: `GET /api/fhir/mappings`
+
+### FHIR API endpoints
+
+```
+POST /api/fhir/ingest              Ingest any supported FHIR R4 resource
+POST /api/fhir/audit-event         Shortcut for AuditEvent → AU domain
+GET  /api/fhir/mappings            List all resource-type → control mappings
+GET  /api/fhir/mappings/{type}     Lookup one resource type
+```
+
+### BabelFHIR-TS validation sidecar
+
+The `fhir-service/` directory contains a Node.js TypeScript microservice that
+uses [`@babelfhir-ts/client-r4`](https://www.npmjs.com/package/@babelfhir-ts/client-r4)
+to validate FHIR resources before they are ingested as CMMC evidence.
+
+```bash
+cd fhir-service
+npm install
+npm run build
+PORT=3100 npm start
+```
+
+Set `FHIR_VALIDATOR_URL=http://localhost:3100` in your backend `.env` to enable
+validation. Set `FHIR_VALIDATOR_STRICT=false` to allow warnings without
+blocking ingestion.
+
+To add US Core profile-aware validation:
+
+```bash
+npx babelfhir-ts install hl7.fhir.us.core@8.0.0 --output fhir-service/src/generated
+```
+
+---
+
+
 
 - [CMMC Official Site](https://dodcio.defense.gov/CMMC/)
 - [NIST SP 800-171 Rev 2](https://csrc.nist.gov/pubs/sp/800/171/r2/upd1/final)

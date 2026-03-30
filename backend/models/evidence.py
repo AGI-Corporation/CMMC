@@ -19,6 +19,7 @@ class EvidenceType(str, Enum):
     REPORT = "report"
     INTERVIEW = "interview"
     CONFIGURATION = "configuration"
+    FHIR = "fhir"
 
 
 class EvidenceBase(BaseModel):
