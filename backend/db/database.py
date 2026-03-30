@@ -31,7 +31,7 @@ class ControlRecord(Base):
     __tablename__ = "controls"
     id = Column(String, primary_key=True, index=True)  # e.g. AC.1.001
     domain = Column(String, index=True)
-    level = Column(String)
+    level = Column(String, index=True)
     title = Column(String)
     description = Column(Text)
     zt_pillar = Column(String)  # User/Device/Network/App/Data/Visibility/Automation
