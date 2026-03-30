@@ -8,6 +8,7 @@ implementation evidence, and produce POAM recommendations.
 """
 
 import json
+import logging
 import os
 import uuid
 from datetime import UTC, datetime
@@ -273,6 +274,7 @@ class MistralComplianceAgent:
 # ─── FastAPI router for Mistral agent endpoints ────────────────────────────────
 from fastapi import APIRouter, Depends, HTTPException
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 agent = MistralComplianceAgent()
 
@@ -318,7 +320,11 @@ async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_d
             "model": MISTRAL_MODEL,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error during gap analysis for {req.control_id}")
+        raise HTTPException(
+            status_code=500,
+            detail="An internal server error occurred during gap analysis.",
+        )
 
 
 @router.post("/code-review", summary="DevSecOps code security analysis with Codestral")
@@ -333,7 +339,11 @@ async def code_review(req: CodeReviewRequest, db: AsyncSession = Depends(get_db)
         )
         return {"analysis": result, "model": MISTRAL_CODE_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error during code review")
+        raise HTTPException(
+            status_code=500,
+            detail="An internal server error occurred during code review.",
+        )
 
 
 @router.post("/ask", summary="Ask a CMMC/ZT compliance question")
@@ -343,4 +353,8 @@ async def ask_question(req: QuestionRequest):
         answer = await agent.answer_compliance_question(req.question, req.context)
         return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error answering compliance question")
+        raise HTTPException(
+            status_code=500,
+            detail="An internal server error occurred while answering the compliance question.",
+        )
