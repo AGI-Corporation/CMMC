@@ -73,3 +73,26 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+
+@pytest.mark.anyio
+async def test_ssp_zt_pillar_progress():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/ssp")
+        assert resp.status_code == 200
+        content = resp.text
+
+        # Verify the Zero Trust Pillar table exists and has progress bars
+        assert "### Zero Trust Pillar Alignment" in content
+        assert "| ZT Pillar | CMMC Domains | Progress |" in content
+
+        # We should NOT see "See assessment" anymore
+        assert "See assessment" not in content
+
+        # We should see progress bar characters in the table rows
+        # The User pillar (AC, IA, PS) should have some implementation from setup_db (AC.1.001 is implemented)
+        assert "| User | AC, IA, PS |" in content
+        # There should be at least one progress bar in the table (using `█` or `░`)
+        assert "█" in content or "░" in content

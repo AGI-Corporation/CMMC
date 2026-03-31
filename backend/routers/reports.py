@@ -23,6 +23,17 @@ from backend.db.database import (AssessmentRecord, ControlRecord,
 
 router = APIRouter()
 
+# Zero Trust Pillar to CMMC Domain mapping
+ZT_PILLAR_DOMAINS = {
+    "User": ["AC", "IA", "PS"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA"],
+}
+
 
 def get_status_emoji(status: str) -> str:
     """Map implementation status to a visual emoji for better scannability."""
@@ -102,6 +113,22 @@ async def generate_ssp(
     )
     progress_bar = get_progress_bar(compliance_pct)
 
+    # Calculate Pillar Progress
+    pillar_rows = ""
+    for pillar, domains in ZT_PILLAR_DOMAINS.items():
+        p_total = 0
+        p_implemented = 0
+        for c in controls.values():
+            if c.domain in domains:
+                p_total += 1
+                a = assessments_dict.get(c.id)
+                if a and a.status == "implemented":
+                    p_implemented += 1
+
+        p_pct = (p_implemented / p_total * 100) if p_total > 0 else 0
+        p_bar = get_progress_bar(p_pct, width=8)
+        pillar_rows += f"| {pillar} | {', '.join(domains)} | {p_bar} |\n"
+
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
@@ -140,16 +167,9 @@ async def generate_ssp(
 
 ### Zero Trust Pillar Alignment
 
-| ZT Pillar | CMMC Domains | Status |
-|-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
-
+| ZT Pillar | CMMC Domains | Progress |
+|-----------|--------------|----------|
+{pillar_rows}
 ## 3. Assessment Findings
 
 *Note: Only the first 20 assessment findings are displayed in this summary.*
