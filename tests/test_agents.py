@@ -113,3 +113,273 @@ async def test_agent_run_promotion():
         data = detail_resp.json()
         assert data["implementation_status"] == "partially_implemented"
         assert "Promoted from icam" in data["notes"]
+
+
+# ─── New Agent Tests ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_data_agent_assess():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/data/assess")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["agent"] == "data_protection"
+    assert data["zt_pillar"] == "Data"
+    assert len(data["assessments"]) > 0
+    control_ids = [a["control_id"] for a in data["assessments"]]
+    assert "SC.3.177" in control_ids
+    assert "AU.2.041" in control_ids
+
+
+@pytest.mark.anyio
+async def test_data_agent_stores():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/data/stores")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_stores" in data
+    assert "cui_stores" in data
+    assert data["total_stores"] > 0
+
+
+@pytest.mark.anyio
+async def test_infra_agent_assess():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/infra/assess")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["agent"] == "infrastructure"
+    assert "Device" in data["zt_pillars"]
+    assert "Network" in data["zt_pillars"]
+    assert len(data["assessments"]) > 0
+    control_ids = [a["control_id"] for a in data["assessments"]]
+    assert "CM.2.061" in control_ids
+    assert "SC.3.177" in control_ids
+
+
+@pytest.mark.anyio
+async def test_infra_agent_network_topology():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/infra/network-topology")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_segments" in data
+    assert "segments" in data
+    assert data["total_segments"] > 0
+
+
+@pytest.mark.anyio
+async def test_infra_agent_devices():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/infra/devices")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_devices" in data
+    assert data["total_devices"] > 0
+
+
+@pytest.mark.anyio
+async def test_governance_agent_assess():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/governance/assess")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["agent"] == "governance"
+    assert len(data["assessments"]) > 0
+    control_ids = [a["control_id"] for a in data["assessments"]]
+    assert "CA.2.157" in control_ids
+    assert "RA.2.141" in control_ids
+
+
+@pytest.mark.anyio
+async def test_governance_risk_posture():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/governance/risk-posture")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_risks" in data
+    assert "open_risks" in data
+    assert data["total_risks"] > 0
+
+
+@pytest.mark.anyio
+async def test_governance_policies():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/governance/policies")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_policies" in data
+    assert data["total_policies"] > 0
+
+
+@pytest.mark.anyio
+async def test_governance_poam_priorities():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/governance/poam-priorities")
+    assert response.status_code == 200
+    data = response.json()
+    assert "poam_items" in data
+    assert "total_items" in data
+
+
+@pytest.mark.anyio
+async def test_ops_agent_assess():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/ops/assess")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["agent"] == "operations"
+    assert data["zt_pillar"] == "Automation & Orchestration"
+    assert len(data["assessments"]) > 0
+    control_ids = [a["control_id"] for a in data["assessments"]]
+    assert "IR.2.092" in control_ids
+    assert "AU.2.041" in control_ids
+
+
+@pytest.mark.anyio
+async def test_ops_agent_siem_status():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/ops/siem-status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_sources" in data
+    assert "enabled_sources" in data
+    assert data["total_sources"] > 0
+
+
+@pytest.mark.anyio
+async def test_ops_agent_incidents():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/ops/incidents")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_incidents" in data
+    assert data["total_incidents"] > 0
+
+
+@pytest.mark.anyio
+async def test_ops_agent_incident_triage():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post(
+            "/api/agents/ops/incident/triage",
+            json={
+                "incident_type": "unauthorized_access",
+                "description": "Credential stuffing detected on admin portal",
+            },
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert "severity" in data
+    assert "immediate_actions" in data
+    assert "cmmc_controls_engaged" in data
+    assert len(data["immediate_actions"]) > 0
+    assert "IR.2.092" in data["cmmc_controls_engaged"]
+
+
+@pytest.mark.anyio
+async def test_orchestrator_run_manual():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post(
+            "/api/orchestrator/run",
+            params={"trigger": "manual", "scope": "test-system"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "completed"
+    assert "task_id" in data
+    assert data["total_assessments"] >= 0
+
+
+@pytest.mark.anyio
+async def test_orchestrator_webhook_code_push():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post(
+            "/api/orchestrator/webhook/code-push",
+            json={
+                "service": "cmmc-api",
+                "branch": "main",
+                "commit_sha": "abc1234",
+            },
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["event"] == "code_push"
+    assert data["service"] == "cmmc-api"
+    assert data["status"] == "completed"
+    assert "assessments_run" in data
+
+
+@pytest.mark.anyio
+async def test_orchestrator_webhook_incident():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post(
+            "/api/orchestrator/webhook/incident",
+            json={
+                "incident_type": "ransomware",
+                "description": "Ransomware indicators detected on file server",
+                "severity": "P1",
+            },
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["event"] == "incident"
+    assert data["status"] == "completed"
+    assert "IR.2.092" in data["ir_controls_engaged"]
+
+
+@pytest.mark.anyio
+async def test_orchestrator_run_assessment_trigger():
+    """Full ASSESSMENT trigger runs all agents."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post(
+            "/api/orchestrator/run",
+            params={"trigger": "assessment", "scope": "full-cmmc-assessment"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "completed"
+    # All six pillar agents should have contributed findings
+    assert data["total_assessments"] > 0
+    owner_agents = {
+        r.get("owner_agent")
+        for r in data["findings"].get("results", [])
+        if "owner_agent" in r
+    }
+    assert "icam" in owner_agents
+    assert "data_protection" in owner_agents
+    assert "infrastructure" in owner_agents

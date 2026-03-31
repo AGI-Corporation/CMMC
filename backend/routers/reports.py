@@ -313,5 +313,9 @@ async def get_dashboard(
             {"name": "icam", "endpoint": "/api/agents/icam"},
             {"name": "devsecops", "endpoint": "/api/agents/devsecops"},
             {"name": "mistral", "endpoint": "/api/agents/mistral"},
+            {"name": "data_protection", "endpoint": "/api/agents/data"},
+            {"name": "infrastructure", "endpoint": "/api/agents/infra"},
+            {"name": "governance", "endpoint": "/api/agents/governance"},
+            {"name": "operations", "endpoint": "/api/agents/ops"},
         ],
     }

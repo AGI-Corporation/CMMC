@@ -9,29 +9,29 @@ agents, aggregates evidence, and generates unified compliance scorecards.
 Aligns with DoD ZT Orchestration/Automation pillar and Fulcrum LOE 3/4.
 """
 
-import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from fastapi import APIRouter, Body, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.database import (AgentRunRecord, AssessmentRecord,
-                                 ControlRecord, get_db)
+                                  ControlRecord, get_db,
+                                  get_latest_assessments)
 
 
 class AgentType(str, Enum):
-    ICAM = "icam"  # Identity/Credential/Access Mgmt
-    DATA = "data_protection"  # Data-centric security
-    INFRA = "infrastructure"  # Network/micro-segmentation
-    DEVSECOPS = "devsecops"  # DevSecOps/supply chain
+    ICAM = "icam"              # Identity/Credential/Access Mgmt
+    DATA = "data_protection"   # Data-centric security
+    INFRA = "infrastructure"   # Network/micro-segmentation
+    DEVSECOPS = "devsecops"    # DevSecOps/supply chain
     GOVERNANCE = "governance"  # Policy/risk/POA&M
-    OPS = "operations"  # IR/SIEM/SOAR
-    MISTRAL = "mistral"  # AI analysis engine
+    OPS = "operations"         # IR/SIEM/SOAR
+    MISTRAL = "mistral"        # AI analysis engine
 
 
 class TaskTrigger(str, Enum):
@@ -73,10 +73,10 @@ class ComplianceOrchestrator:
     """
     Central orchestrator that:
     1. Decomposes compliance tasks into agent-specific sub-tasks
-    2. Aggregates agent outputs into unified ControlStatus records
+    2. Dispatches tasks to specialist agents and aggregates findings
     3. Computes ZT pillar maturity scores and SPRS score
     4. Generates dashboard-ready scorecards
-    5. Routes incidents to IR agent and code pushes to DevSecOps agent
+    5. Routes incidents to OPS agent and code pushes to DevSecOps agent
     """
 
     # ZT Pillar -> CMMC domains mapping (DoD ZT Strategy alignment)
@@ -147,32 +147,87 @@ class ComplianceOrchestrator:
                 "AC.1.001",
             ]
         elif trigger == TaskTrigger.INCIDENT:
-            task.assigned_agents = [AgentType.OPS, AgentType.MISTRAL]
-            task.required_controls = task.required_controls or ["IR.2.092", "AU.2.041"]
+            task.assigned_agents = [AgentType.OPS, AgentType.GOVERNANCE]
+            task.required_controls = task.required_controls or [
+                "IR.2.092",
+                "IR.2.093",
+                "AU.2.041",
+            ]
         elif trigger == TaskTrigger.ASSESSMENT:
-            task.assigned_agents = list(AgentType)
-        else:
-            task.assigned_agents = [AgentType.GOVERNANCE, AgentType.MISTRAL]
+            task.assigned_agents = [
+                AgentType.ICAM,
+                AgentType.DATA,
+                AgentType.INFRA,
+                AgentType.DEVSECOPS,
+                AgentType.GOVERNANCE,
+                AgentType.OPS,
+            ]
+        elif trigger == TaskTrigger.SCHEDULE:
+            task.assigned_agents = [
+                AgentType.ICAM,
+                AgentType.INFRA,
+                AgentType.GOVERNANCE,
+                AgentType.OPS,
+            ]
+        else:  # MANUAL
+            task.assigned_agents = [AgentType.GOVERNANCE]
 
         self.task_queue.append(task)
         return task
 
-    async def _get_latest_assessments(self, db: AsyncSession):
-        sub_q = (
-            select(
-                AssessmentRecord.control_id,
-                func.max(AssessmentRecord.assessment_date).label("max_date"),
-            )
-            .group_by(AssessmentRecord.control_id)
-            .subquery()
-        )
-        query = select(AssessmentRecord).join(
-            sub_q,
-            (AssessmentRecord.control_id == sub_q.c.control_id)
-            & (AssessmentRecord.assessment_date == sub_q.c.max_date),
-        )
-        result = await db.execute(query)
-        return {a.control_id: a for a in result.scalars().all()}
+    async def execute_task(self, task: Task, db: AsyncSession) -> Dict[str, Any]:
+        """
+        Dispatch a compliance task to assigned agents and aggregate findings.
+        Agent imports are deferred inside the method to avoid circular imports.
+        """
+        from agents.data_agent import agent as data_module
+        from agents.devsecops_agent import agent as devsecops_module
+        from agents.governance_agent import agent as governance_module
+        from agents.icam_agent import agent as icam_module
+        from agents.infra_agent import agent as infra_module
+        from agents.ops_agent import agent as ops_module
+
+        agent_instances = {
+            AgentType.ICAM: icam_module._icam,
+            AgentType.DATA: data_module._data_agent,
+            AgentType.INFRA: infra_module._infra,
+            AgentType.DEVSECOPS: devsecops_module._dso,
+            AgentType.GOVERNANCE: governance_module._governance,
+            AgentType.OPS: ops_module._ops,
+        }
+
+        all_results: List[Dict[str, Any]] = []
+        task.status = "running"
+
+        for agent_type in task.assigned_agents:
+            if agent_type == AgentType.MISTRAL:
+                # Mistral is invoked on-demand per control; skip in bulk runs
+                continue
+            agent_obj = agent_instances.get(agent_type)
+            if agent_obj is None:
+                continue
+            try:
+                results = await agent_obj.run_full_assessment(
+                    db, trigger=task.trigger.value
+                )
+                all_results.extend(results)
+            except Exception:
+                all_results.append(
+                    {
+                        "agent": agent_type.value,
+                        "error": "Agent assessment failed; check server logs for details.",
+                        "status": "failed",
+                    }
+                )
+
+        task.findings = {"results": all_results}
+        task.status = "completed"
+        task.completed_at = datetime.now(UTC)
+        self.completed_tasks.append(task)
+        if task in self.task_queue:
+            self.task_queue.remove(task)
+
+        return task.findings
 
     async def compute_sprs_score(self, db: AsyncSession) -> Dict[str, Any]:
         """Compute SPRS score using methodology from assessment.py."""
@@ -182,7 +237,7 @@ class ComplianceOrchestrator:
         deductions_list = []
         implemented_count = not_implemented_count = 0
 
-        assessments_map = await self._get_latest_assessments(db)
+        assessments_map = await get_latest_assessments(db)
 
         for c in controls:
             cid = c.id
@@ -209,7 +264,7 @@ class ComplianceOrchestrator:
     async def compute_zt_scorecard(self, db: AsyncSession) -> List[Dict[str, Any]]:
         """Generate per-ZT-pillar maturity scorecard from database."""
         scorecard = []
-        assessments_map = await self._get_latest_assessments(db)
+        assessments_map = await get_latest_assessments(db)
 
         for pillar, domains in self.ZT_DOMAIN_MAP.items():
             query = select(ControlRecord).where(ControlRecord.domain.in_(domains))
@@ -231,7 +286,8 @@ class ComplianceOrchestrator:
                     confidences.append(assessment.confidence)
                     if status == "implemented":
                         implemented += 1
-                    elif status == "partially_implemented" or status == "partial":
+                    elif status in ("partially_implemented", "partial"):
+                        # Both values appear in the DB; "partial" is a legacy alias
                         partial += 1
                 else:
                     confidences.append(0.0)
@@ -284,14 +340,15 @@ class ComplianceOrchestrator:
         }
 
 
-# FastAPI endpoint integration
+# ─── FastAPI endpoint integration ─────────────────────────────────────────────
+
 router = APIRouter()
 _orchestrator = ComplianceOrchestrator()
 
 
 @router.post("/task", summary="Create and route a compliance task")
 async def create_task(trigger: str, scope: str, controls: str = ""):
-    """Create a new orchestrated compliance task."""
+    """Create a new orchestrated compliance task (does not execute it)."""
     task = _orchestrator.create_task(
         trigger=TaskTrigger(trigger),
         scope=scope,
@@ -302,6 +359,124 @@ async def create_task(trigger: str, scope: str, controls: str = ""):
         "assigned_agents": task.assigned_agents,
         "required_controls": task.required_controls,
         "status": task.status,
+    }
+
+
+@router.post("/run", summary="Create, route, and execute a compliance task across all assigned agents")
+async def run_task(
+    trigger: str = "manual",
+    scope: str = "full-system",
+    controls: str = "",
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a compliance task and immediately execute it across all assigned
+    specialist agents. Aggregates findings from ICAM, Data, Infra, DevSecOps,
+    Governance, and OPS agents based on the trigger type.
+    """
+    task = _orchestrator.create_task(
+        trigger=TaskTrigger(trigger),
+        scope=scope,
+        required_controls=controls.split(",") if controls else None,
+    )
+    findings = await _orchestrator.execute_task(task, db)
+    return {
+        "task_id": task.id,
+        "trigger": trigger,
+        "scope": scope,
+        "assigned_agents": task.assigned_agents,
+        "status": task.status,
+        "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+        "total_assessments": len(findings.get("results", [])),
+        "findings": findings,
+    }
+
+
+@router.post(
+    "/webhook/code-push",
+    summary="Webhook: trigger DevSecOps + ICAM agent run on code push event",
+)
+async def webhook_code_push(
+    service: str = Body(..., embed=True),
+    branch: str = Body("main", embed=True),
+    commit_sha: str = Body("", embed=True),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Receive a code-push event and trigger automated DevSecOps pipeline assessment.
+    Routes to DevSecOps agent (container scan, SBOM, pipeline gates) and ICAM
+    agent (access control verification).
+    Maps to CMMC CM.2.061, SI.2.214, AC.1.001.
+    """
+    scope = f"{service}@{branch}"
+    task = _orchestrator.create_task(
+        trigger=TaskTrigger.CODE_PUSH,
+        scope=scope,
+        context={"commit_sha": commit_sha},
+    )
+    findings = await _orchestrator.execute_task(task, db)
+    return {
+        "event": "code_push",
+        "service": service,
+        "branch": branch,
+        "commit_sha": commit_sha or "unknown",
+        "task_id": task.id,
+        "status": task.status,
+        "assessments_run": len(findings.get("results", [])),
+        "findings_summary": [
+            {
+                "control_id": r.get("control_id"),
+                "status": r.get("status"),
+                "confidence": r.get("confidence"),
+                "owner_agent": r.get("owner_agent"),
+            }
+            for r in findings.get("results", [])
+            if "control_id" in r
+        ],
+    }
+
+
+@router.post(
+    "/webhook/incident",
+    summary="Webhook: trigger OPS + Governance agent run on security incident",
+)
+async def webhook_incident(
+    incident_type: str = Body(..., embed=True),
+    description: str = Body(..., embed=True),
+    severity: str = Body("P3", embed=True),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Receive a security incident alert and trigger automated IR agent assessment.
+    Routes to OPS agent (incident triage, SIEM coverage) and Governance agent
+    (policy status, POA&M).
+    Maps to CMMC IR.2.092, IR.2.093, AU.2.041.
+    """
+    scope = f"incident:{incident_type}"
+    task = _orchestrator.create_task(
+        trigger=TaskTrigger.INCIDENT,
+        scope=scope,
+        context={"description": description, "severity": severity},
+    )
+    findings = await _orchestrator.execute_task(task, db)
+    return {
+        "event": "incident",
+        "incident_type": incident_type,
+        "severity": severity,
+        "task_id": task.id,
+        "status": task.status,
+        "assessments_run": len(findings.get("results", [])),
+        "ir_controls_engaged": ["IR.2.092", "IR.2.093", "IR.2.094", "AU.2.041"],
+        "findings_summary": [
+            {
+                "control_id": r.get("control_id"),
+                "status": r.get("status"),
+                "confidence": r.get("confidence"),
+                "owner_agent": r.get("owner_agent"),
+            }
+            for r in findings.get("results", [])
+            if "control_id" in r
+        ],
     }
 
 

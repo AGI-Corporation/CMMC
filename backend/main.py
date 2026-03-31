@@ -16,9 +16,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_mcp import FastApiMCP
 
+from agents.data_agent import agent as data_agent
 from agents.devsecops_agent import agent as devsecops
+from agents.governance_agent import agent as governance_agent
 from agents.icam_agent import agent as icam
+from agents.infra_agent import agent as infra_agent
 from agents.mistral_agent import agent as mistral
+from agents.ops_agent import agent as ops_agent
 from agents.orchestrator import agent as orchestrator
 from backend.db.database import init_db
 from backend.middleware.security import SecurityHeadersMiddleware
@@ -81,6 +85,18 @@ app.include_router(
     devsecops.router, prefix="/api/agents/devsecops", tags=["DevSecOps Agent"]
 )
 app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
+app.include_router(
+    data_agent.router, prefix="/api/agents/data", tags=["Data Protection Agent"]
+)
+app.include_router(
+    infra_agent.router, prefix="/api/agents/infra", tags=["Infrastructure Agent"]
+)
+app.include_router(
+    governance_agent.router, prefix="/api/agents/governance", tags=["Governance Agent"]
+)
+app.include_router(
+    ops_agent.router, prefix="/api/agents/ops", tags=["Operations Agent"]
+)
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
