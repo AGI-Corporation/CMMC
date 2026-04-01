@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -321,3 +321,253 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
         "agent_type": run.agent_type,
         "assessments_created": promoted_count,
     }
+
+
+# ── Request/Response models for manual assessment submission ───────────────────
+
+class AssessmentSubmission(BaseModel):
+    control_id: str
+    status: str  # implemented / partially_implemented / planned / not_implemented / na
+    confidence: float = 0.0  # 0.0 – 1.0
+    notes: Optional[str] = None
+    evidence_ids: Optional[List[str]] = None
+    assessor: Optional[str] = None
+    system_name: Optional[str] = None
+    poam_required: Optional[bool] = None
+
+
+class AssessmentSubmissionResponse(BaseModel):
+    submission_id: str
+    control_id: str
+    status: str
+    confidence: float
+    assessor: Optional[str]
+    assessment_date: str
+    poam_required: bool
+    blockchain_tx_id: Optional[str] = None
+
+
+@router.post(
+    "/submit",
+    response_model=AssessmentSubmissionResponse,
+    summary="Submit a manual control assessment",
+    description=(
+        "Submit a human assessor's finding for a specific CMMC control. "
+        "Creates an AssessmentRecord, auto-determines POAM requirement, "
+        "and logs the event to the blockchain audit chain. "
+        "Maps to CMMC CA.2.157, CA.2.158, and AU.2.041."
+    ),
+)
+async def submit_assessment(
+    submission: AssessmentSubmission,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Directly submit a compliance assessment for a CMMC control.
+
+    The `status` field must be one of:
+      - implemented
+      - partially_implemented
+      - planned
+      - not_implemented
+      - na
+
+    A POAM entry is automatically flagged when status is not_implemented or
+    partially_implemented and confidence < 1.0.
+    """
+    valid_statuses = {
+        "implemented", "partially_implemented", "planned",
+        "not_implemented", "na", "partial", "not_started",
+    }
+    if submission.status not in valid_statuses:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid status '{submission.status}'. Must be one of: {sorted(valid_statuses)}",
+        )
+
+    if not (0.0 <= submission.confidence <= 1.0):
+        raise HTTPException(
+            status_code=422,
+            detail="confidence must be between 0.0 and 1.0.",
+        )
+
+    # Verify control exists
+    ctrl_result = await db.execute(
+        select(ControlRecord).where(ControlRecord.id == submission.control_id)
+    )
+    if ctrl_result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Control '{submission.control_id}' not found in catalog.",
+        )
+
+    # Determine POAM requirement
+    poam_needed = (
+        submission.poam_required
+        if submission.poam_required is not None
+        else submission.status in {"not_implemented", "partially_implemented", "partial"}
+    )
+
+    submission_id = str(uuid.uuid4())
+    record = AssessmentRecord(
+        id=submission_id,
+        system_name=submission.system_name or os.getenv("SPRS_SYSTEM_NAME", "System"),
+        control_id=submission.control_id,
+        status=submission.status,
+        confidence=submission.confidence,
+        notes=submission.notes,
+        evidence_ids=submission.evidence_ids or [],
+        assessor=submission.assessor or "manual",
+        assessment_date=datetime.now(UTC),
+        poam_required="true" if poam_needed else "false",
+    )
+    db.add(record)
+
+    # Log to audit chain
+    tx = await bc.record_event(
+        db,
+        event_type="assessment_submitted",
+        actor=submission.assessor or "manual",
+        payload={
+            "submission_id": submission_id,
+            "control_id": submission.control_id,
+            "status": submission.status,
+            "confidence": submission.confidence,
+            "poam_required": poam_needed,
+            "submitted_at": datetime.now(UTC).isoformat(),
+        },
+    )
+
+    await db.commit()
+    return AssessmentSubmissionResponse(
+        submission_id=submission_id,
+        control_id=submission.control_id,
+        status=submission.status,
+        confidence=submission.confidence,
+        assessor=submission.assessor or "manual",
+        assessment_date=record.assessment_date.isoformat(),
+        poam_required=poam_needed,
+        blockchain_tx_id=tx.id,
+    )
+
+
+@router.get(
+    "/history/{control_id}",
+    summary="Get assessment history for a control",
+    description=(
+        "Return all historical assessment records for a specific control ID in "
+        "reverse chronological order. Useful for audit trails and trend analysis. "
+        "Maps to AU.2.042 and CA.2.157."
+    ),
+)
+async def get_assessment_history(
+    control_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the full assessment history for a CMMC control."""
+    # Ensure control exists
+    ctrl_result = await db.execute(
+        select(ControlRecord).where(ControlRecord.id == control_id)
+    )
+    ctrl = ctrl_result.scalar_one_or_none()
+    if ctrl is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Control '{control_id}' not found in catalog.",
+        )
+
+    query = (
+        select(AssessmentRecord)
+        .where(AssessmentRecord.control_id == control_id)
+        .order_by(AssessmentRecord.assessment_date.desc())
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    records = result.scalars().all()
+
+    return {
+        "control_id": control_id,
+        "control_title": ctrl.title,
+        "total_assessments": len(records),
+        "history": [
+            {
+                "assessment_id": r.id,
+                "status": r.status,
+                "confidence": r.confidence,
+                "assessor": r.assessor,
+                "system_name": r.system_name,
+                "notes": r.notes,
+                "poam_required": r.poam_required == "true",
+                "assessment_date": r.assessment_date.isoformat()
+                if r.assessment_date
+                else None,
+                "evidence_ids": r.evidence_ids or [],
+            }
+            for r in records
+        ],
+    }
+
+
+@router.get(
+    "/runs",
+    summary="List agent run records",
+    description=(
+        "Return a paginated list of agent run records, optionally filtered by "
+        "agent type, status, or trigger. Supports pagination via limit/offset."
+    ),
+)
+async def list_agent_runs(
+    agent_type: Optional[str] = Query(None, description="Filter by agent type (e.g. icam, governance)"),
+    status: Optional[str] = Query(None, description="Filter by status (running, completed, failed)"),
+    trigger: Optional[str] = Query(None, description="Filter by trigger (manual, schedule, code_push, incident, assessment)"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return paginated agent run records with optional filters."""
+    query = select(AgentRunRecord).order_by(AgentRunRecord.created_at.desc())
+
+    if agent_type:
+        query = query.where(AgentRunRecord.agent_type == agent_type)
+    if status:
+        query = query.where(AgentRunRecord.status == status)
+    if trigger:
+        query = query.where(AgentRunRecord.trigger == trigger)
+
+    # Count total matching
+    count_query = select(func.count(AgentRunRecord.id))
+    if agent_type:
+        count_query = count_query.where(AgentRunRecord.agent_type == agent_type)
+    if status:
+        count_query = count_query.where(AgentRunRecord.status == status)
+    if trigger:
+        count_query = count_query.where(AgentRunRecord.trigger == trigger)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar_one() or 0
+
+    paged_query = query.limit(limit).offset(offset)
+    result = await db.execute(paged_query)
+    runs = result.scalars().all()
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "runs": [
+            {
+                "run_id": r.id,
+                "agent_type": r.agent_type,
+                "trigger": r.trigger,
+                "scope": r.scope,
+                "status": r.status,
+                "controls_evaluated": r.controls_evaluated or [],
+                "mistral_model": r.mistral_model,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+            }
+            for r in runs
+        ],
+    }
+

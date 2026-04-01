@@ -586,3 +586,324 @@ async def test_rate_limit_exempt_health():
     assert "x-ratelimit-limit" not in resp.headers
 
 
+
+
+# ─── Expanded Catalog Tests ────────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_catalog_has_all_domains():
+    """All 14 CMMC domains + SR should be present in the seeded catalog."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/controls/")
+    assert resp.status_code == 200
+    data = resp.json()
+    domains = {c["control"]["domain"] for c in data["controls"]}
+    expected = {"AC", "AU", "CA", "CM", "IA", "IR", "MA", "MP", "PE", "PS", "RA", "SA", "SC", "SI", "SR"}
+    assert expected.issubset(domains), f"Missing domains: {expected - domains}"
+
+
+@pytest.mark.anyio
+async def test_catalog_control_count():
+    """Catalog should have at least 70 controls after expansion."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/controls/")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] >= 70, f"Expected ≥70 controls, got {data['total']}"
+
+
+@pytest.mark.anyio
+async def test_catalog_domain_filter_au():
+    """AU domain filter should return only AU controls."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/controls/?domain=AU")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] >= 4
+    for c in data["controls"]:
+        assert c["control"]["domain"] == "AU"
+
+
+@pytest.mark.anyio
+async def test_catalog_domain_filter_sr():
+    """SR domain filter should return supply chain controls."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/controls/?domain=SR")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] >= 4
+    control_ids = [c["control"]["id"] for c in data["controls"]]
+    assert "SR.1.001" in control_ids
+    assert "SR.2.111" in control_ids
+
+
+# ─── Assessment Submit Tests ───────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_assessment_submit_implemented():
+    """Submit an 'implemented' assessment and verify response."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "AC.1.001",
+                "status": "implemented",
+                "confidence": 0.95,
+                "notes": "Implemented via LDAP with RBAC.",
+                "assessor": "test-assessor",
+            },
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["control_id"] == "AC.1.001"
+    assert data["status"] == "implemented"
+    assert data["confidence"] == 0.95
+    assert data["poam_required"] is False
+    assert "submission_id" in data
+    assert "blockchain_tx_id" in data
+    assert data["blockchain_tx_id"] is not None
+
+
+@pytest.mark.anyio
+async def test_assessment_submit_not_implemented_triggers_poam():
+    """not_implemented status should auto-flag poam_required."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "IA.3.083",
+                "status": "not_implemented",
+                "confidence": 0.0,
+                "assessor": "test-assessor",
+            },
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["poam_required"] is True
+
+
+@pytest.mark.anyio
+async def test_assessment_submit_partially_implemented_triggers_poam():
+    """partially_implemented should auto-flag poam_required."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "SC.3.177",
+                "status": "partially_implemented",
+                "confidence": 0.4,
+                "assessor": "test-assessor",
+            },
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["poam_required"] is True
+
+
+@pytest.mark.anyio
+async def test_assessment_submit_invalid_status():
+    """Unknown status should return 422."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "AC.1.001",
+                "status": "unicorn",
+                "confidence": 0.5,
+            },
+        )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_assessment_submit_invalid_confidence():
+    """Confidence > 1.0 should return 422."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "AC.1.001",
+                "status": "implemented",
+                "confidence": 1.5,
+            },
+        )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_assessment_submit_unknown_control():
+    """Submitting for a non-existent control should return 404."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "XX.9.999",
+                "status": "implemented",
+                "confidence": 0.9,
+            },
+        )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_assessment_submit_blockchain_recorded():
+    """Each submission should add a transaction to the blockchain."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        chain_before = (await ac.get("/api/blockchain/chain")).json()["total_transactions"]
+        await ac.post(
+            "/api/assessment/submit",
+            json={"control_id": "AU.2.041", "status": "implemented", "confidence": 0.8},
+        )
+        chain_after = (await ac.get("/api/blockchain/chain")).json()["total_transactions"]
+    assert chain_after == chain_before + 1
+
+
+# ─── Assessment History Tests ──────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_assessment_history_returns_submissions():
+    """History endpoint should return previously submitted assessments."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # Submit a couple assessments for the same control
+        await ac.post(
+            "/api/assessment/submit",
+            json={"control_id": "CM.2.061", "status": "planned", "confidence": 0.3},
+        )
+        await ac.post(
+            "/api/assessment/submit",
+            json={"control_id": "CM.2.061", "status": "implemented", "confidence": 0.9},
+        )
+        resp = await ac.get("/api/assessment/history/CM.2.061")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["control_id"] == "CM.2.061"
+    assert data["total_assessments"] >= 2
+    assert "history" in data
+    assert len(data["history"]) >= 2
+    # Most recent first
+    statuses = [h["status"] for h in data["history"]]
+    assert "implemented" in statuses
+
+
+@pytest.mark.anyio
+async def test_assessment_history_unknown_control():
+    """History for unknown control should return 404."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/assessment/history/XX.9.999")
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_assessment_history_empty():
+    """Control with no assessments should return empty history list."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # SA.2.150 has no assessments in this test run
+        resp = await ac.get("/api/assessment/history/SA.2.150")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_assessments"] == 0
+    assert data["history"] == []
+
+
+# ─── Agent Runs Listing Tests ──────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_list_agent_runs_returns_results():
+    """After agent assessments, /runs should return records."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # Trigger at least one run
+        await ac.get("/api/agents/icam/assess")
+        resp = await ac.get("/api/assessment/runs")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total" in data
+    assert "runs" in data
+    assert data["total"] > 0
+    # Each run should have required fields
+    run = data["runs"][0]
+    assert "run_id" in run
+    assert "agent_type" in run
+    assert "status" in run
+    assert "trigger" in run
+
+
+@pytest.mark.anyio
+async def test_list_agent_runs_filter_by_agent():
+    """Filter by agent_type=icam should return only ICAM runs."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/assessment/runs?agent_type=icam")
+    assert resp.status_code == 200
+    data = resp.json()
+    for run in data["runs"]:
+        assert run["agent_type"] == "icam"
+
+
+@pytest.mark.anyio
+async def test_list_agent_runs_filter_by_status():
+    """Filter by status=completed should return only completed runs."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/assessment/runs?status=completed")
+    assert resp.status_code == 200
+    data = resp.json()
+    for run in data["runs"]:
+        assert run["status"] == "completed"
+
+
+@pytest.mark.anyio
+async def test_list_agent_runs_pagination():
+    """Pagination (limit/offset) should work correctly."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        all_resp = await ac.get("/api/assessment/runs?limit=200")
+        total = all_resp.json()["total"]
+
+        page1 = await ac.get("/api/assessment/runs?limit=2&offset=0")
+        page2 = await ac.get("/api/assessment/runs?limit=2&offset=2")
+
+    p1 = page1.json()
+    p2 = page2.json()
+    assert p1["total"] == total
+    assert len(p1["runs"]) <= 2
+    # Pages should not overlap
+    p1_ids = {r["run_id"] for r in p1["runs"]}
+    p2_ids = {r["run_id"] for r in p2["runs"]}
+    assert p1_ids.isdisjoint(p2_ids)

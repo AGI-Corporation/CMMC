@@ -7,7 +7,7 @@
       "domain": "AC",
       "level": "Level 1",
       "nist_mapping": "3.1.1",
-      "weight": 5
+      "weight": 3
     },
     {
       "id": "AC.1.002",
@@ -16,7 +16,16 @@
       "domain": "AC",
       "level": "Level 1",
       "nist_mapping": "3.1.2",
-      "weight": 5
+      "weight": 3
+    },
+    {
+      "id": "AC.2.005",
+      "title": "Provide privacy and security notices",
+      "description": "Provide privacy and security notices consistent with CUI rules consistent with guidance in NIST SP 800-171 before establishing a user session.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.9",
+      "weight": 3
     },
     {
       "id": "AC.2.006",
@@ -37,8 +46,224 @@
       "weight": 5
     },
     {
+      "id": "AC.2.008",
+      "title": "Use non-privileged accounts for non-security functions",
+      "description": "Use non-privileged accounts or roles when accessing non-security functions.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.6",
+      "weight": 3
+    },
+    {
+      "id": "AC.2.009",
+      "title": "Prevent non-privileged users from executing privileged functions",
+      "description": "Prevent non-privileged users from executing privileged functions and capture the execution of such functions in audit logs.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.8",
+      "weight": 3
+    },
+    {
+      "id": "AC.2.010",
+      "title": "Use session lock",
+      "description": "Use session lock with pattern-hiding displays after a period of inactivity and automatically terminate sessions after a defined condition.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.10",
+      "weight": 3
+    },
+    {
+      "id": "AC.2.011",
+      "title": "Authorize wireless access",
+      "description": "Authorize wireless access prior to allowing such connections and employ authentication and encryption for wireless access.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.16",
+      "weight": 3
+    },
+    {
+      "id": "AC.2.013",
+      "title": "Monitor and control remote access sessions",
+      "description": "Monitor and control remote access sessions and employ cryptographic mechanisms to protect the confidentiality of remote access sessions.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.13",
+      "weight": 3
+    },
+    {
+      "id": "AC.2.015",
+      "title": "Route remote access via managed access control points",
+      "description": "Route remote access via managed network access control points.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.12",
+      "weight": 3
+    },
+    {
+      "id": "AC.2.016",
+      "title": "Control the flow of CUI",
+      "description": "Control the flow of CUI in accordance with approved authorizations.",
+      "domain": "AC",
+      "level": "Level 2",
+      "nist_mapping": "3.1.3",
+      "weight": 3
+    },
+    {
+      "id": "AC.3.017",
+      "title": "Separate duties of individuals",
+      "description": "Separate the duties of individuals to reduce the risk of malevolent activity without collusion.",
+      "domain": "AC",
+      "level": "Level 3",
+      "nist_mapping": "3.1.4",
+      "weight": 5
+    },
+    {
+      "id": "AC.3.018",
+      "title": "Prevent non-privileged users from executing privileged functions (advanced)",
+      "description": "Prevent non-privileged users from executing privileged functions and log all privileged function executions in audit logs with user attribution.",
+      "domain": "AC",
+      "level": "Level 3",
+      "nist_mapping": "3.1.8",
+      "weight": 5
+    },
+    {
+      "id": "AU.2.041",
+      "title": "Create and retain audit records",
+      "description": "Create and retain system audit logs and records to the extent needed to enable the monitoring, analysis, investigation, and reporting of unlawful or unauthorized system activity.",
+      "domain": "AU",
+      "level": "Level 2",
+      "nist_mapping": "3.3.1",
+      "weight": 3
+    },
+    {
+      "id": "AU.2.042",
+      "title": "Ensure audit events are traceable to users",
+      "description": "Ensure that the actions of individual system users can be uniquely traced to those users, so they can be held accountable for their actions.",
+      "domain": "AU",
+      "level": "Level 2",
+      "nist_mapping": "3.3.2",
+      "weight": 3
+    },
+    {
+      "id": "AU.2.043",
+      "title": "Review and update logged audit events",
+      "description": "Review and update logged events to include authentication failures, access control violations, privileged account use, and account changes.",
+      "domain": "AU",
+      "level": "Level 2",
+      "nist_mapping": "3.3.3",
+      "weight": 3
+    },
+    {
+      "id": "AU.2.044",
+      "title": "Alert on audit logging failure",
+      "description": "Alert in the event of an audit logging process failure and take remedial action.",
+      "domain": "AU",
+      "level": "Level 2",
+      "nist_mapping": "3.3.4",
+      "weight": 3
+    },
+    {
+      "id": "AU.3.045",
+      "title": "Correlate audit records from multiple sources",
+      "description": "Correlate audit record review, analysis, and reporting processes for investigation and response to indications of unlawful, unauthorized, suspicious, or unusual activity.",
+      "domain": "AU",
+      "level": "Level 3",
+      "nist_mapping": "3.3.5",
+      "weight": 5
+    },
+    {
+      "id": "AU.3.046",
+      "title": "Provide audit reduction and report generation",
+      "description": "Provide audit record reduction and report generation to support on-demand analysis and reporting.",
+      "domain": "AU",
+      "level": "Level 3",
+      "nist_mapping": "3.3.6",
+      "weight": 5
+    },
+    {
+      "id": "CA.2.157",
+      "title": "Periodically assess security controls",
+      "description": "Periodically assess the security controls in organizational systems to determine if the controls are effective in their application.",
+      "domain": "CA",
+      "level": "Level 2",
+      "nist_mapping": "3.12.1",
+      "weight": 3
+    },
+    {
+      "id": "CA.2.158",
+      "title": "Develop and implement plans of action",
+      "description": "Develop and implement plans of action designed to correct deficiencies and reduce or eliminate vulnerabilities in organizational systems.",
+      "domain": "CA",
+      "level": "Level 2",
+      "nist_mapping": "3.12.2",
+      "weight": 3
+    },
+    {
+      "id": "CA.2.159",
+      "title": "Monitor security controls on an ongoing basis",
+      "description": "Monitor security controls on an ongoing basis to ensure the continued effectiveness of the controls.",
+      "domain": "CA",
+      "level": "Level 2",
+      "nist_mapping": "3.12.3",
+      "weight": 3
+    },
+    {
+      "id": "CA.3.161",
+      "title": "Conduct penetration testing",
+      "description": "Periodically conduct penetration testing to evaluate the security of organizational systems.",
+      "domain": "CA",
+      "level": "Level 3",
+      "nist_mapping": "3.12.4",
+      "weight": 5
+    },
+    {
+      "id": "CA.3.162",
+      "title": "Employ independent assessors",
+      "description": "Employ independent assessors or assessment teams to monitor security controls with a level of independence appropriate to the system impact level.",
+      "domain": "CA",
+      "level": "Level 3",
+      "nist_mapping": "3.12.5",
+      "weight": 5
+    },
+    {
+      "id": "CM.2.061",
+      "title": "Establish and maintain baseline configurations",
+      "description": "Establish and maintain baseline configurations and inventories of organizational systems (including hardware, software, firmware, and documentation) throughout the respective system development life cycles.",
+      "domain": "CM",
+      "level": "Level 2",
+      "nist_mapping": "3.4.1",
+      "weight": 3
+    },
+    {
+      "id": "CM.2.062",
+      "title": "Establish and enforce security configuration settings",
+      "description": "Establish and enforce security configuration settings for information technology products employed in organizational systems.",
+      "domain": "CM",
+      "level": "Level 2",
+      "nist_mapping": "3.4.2",
+      "weight": 3
+    },
+    {
+      "id": "CM.2.064",
+      "title": "Define, document, approve, and enforce physical and logical access restrictions",
+      "description": "Establish and enforce access restrictions associated with changes to organizational systems.",
+      "domain": "CM",
+      "level": "Level 2",
+      "nist_mapping": "3.4.5",
+      "weight": 3
+    },
+    {
+      "id": "CM.3.068",
+      "title": "Restrict, disable, or prevent use of nonessential programs",
+      "description": "Restrict, disable, or prevent the use of nonessential programs, functions, ports, protocols, and services.",
+      "domain": "CM",
+      "level": "Level 3",
+      "nist_mapping": "3.4.6",
+      "weight": 5
+    },
+    {
       "id": "IA.1.076",
-      "title": "Identify system users",
+      "title": "Identify system users, processes, and devices",
       "description": "Identify information system users, processes acting on behalf of users, or devices.",
       "domain": "IA",
       "level": "Level 1",
@@ -46,17 +271,323 @@
       "weight": 3
     },
     {
-      "id": "IA.3.083",
-      "title": "Multi-factor authentication",
-      "description": "Use multi-factor authentication for local and network access to privileged accounts and for network access to non-privileged accounts.",
+      "id": "IA.1.077",
+      "title": "Authenticate identities before allowing access",
+      "description": "Authenticate (or verify) the identities of those users, processes, or devices, as a prerequisite to allowing access to organizational systems.",
+      "domain": "IA",
+      "level": "Level 1",
+      "nist_mapping": "3.5.2",
+      "weight": 3
+    },
+    {
+      "id": "IA.2.078",
+      "title": "Employ replay-resistant authentication",
+      "description": "Employ replay-resistant authentication mechanisms for network access to privileged and non-privileged accounts.",
       "domain": "IA",
       "level": "Level 2",
+      "nist_mapping": "3.5.4",
+      "weight": 3
+    },
+    {
+      "id": "IA.2.079",
+      "title": "Employ MFA for network access to non-privileged accounts",
+      "description": "Employ multifactor authentication for network access to non-privileged accounts.",
+      "domain": "IA",
+      "level": "Level 2",
+      "nist_mapping": "3.5.3",
+      "weight": 3
+    },
+    {
+      "id": "IA.2.080",
+      "title": "Employ MFA for local access to privileged accounts",
+      "description": "Employ multifactor authentication for local access to privileged accounts.",
+      "domain": "IA",
+      "level": "Level 2",
+      "nist_mapping": "3.5.3",
+      "weight": 3
+    },
+    {
+      "id": "IA.2.081",
+      "title": "Employ password length and complexity requirements",
+      "description": "Enforce a minimum password complexity and change of characters when new passwords are created.",
+      "domain": "IA",
+      "level": "Level 2",
+      "nist_mapping": "3.5.7",
+      "weight": 3
+    },
+    {
+      "id": "IA.2.082",
+      "title": "Prohibit password reuse",
+      "description": "Prohibit password reuse for a specified number of generations.",
+      "domain": "IA",
+      "level": "Level 2",
+      "nist_mapping": "3.5.8",
+      "weight": 3
+    },
+    {
+      "id": "IA.3.083",
+      "title": "Use multifactor authentication for local and network access",
+      "description": "Use multifactor authentication for local and network access to privileged accounts and for network access to non-privileged accounts.",
+      "domain": "IA",
+      "level": "Level 3",
       "nist_mapping": "3.5.3",
       "weight": 5
     },
     {
+      "id": "IA.3.084",
+      "title": "Employ physical authenticators",
+      "description": "Employ physical authenticators (e.g., FIDO2 hardware tokens, PIV cards) for privileged account access.",
+      "domain": "IA",
+      "level": "Level 3",
+      "nist_mapping": "3.5.3",
+      "weight": 5
+    },
+    {
+      "id": "IR.2.092",
+      "title": "Establish an operational incident-handling capability",
+      "description": "Establish an operational incident-handling capability for organizational systems that includes preparation, detection, analysis, containment, recovery, and user response activities.",
+      "domain": "IR",
+      "level": "Level 2",
+      "nist_mapping": "3.6.1",
+      "weight": 3
+    },
+    {
+      "id": "IR.2.093",
+      "title": "Track, document, and report incidents",
+      "description": "Track, document, and report incidents to designated officials and/or authorities both internal and external to the organization.",
+      "domain": "IR",
+      "level": "Level 2",
+      "nist_mapping": "3.6.2",
+      "weight": 3
+    },
+    {
+      "id": "IR.2.094",
+      "title": "Test incident response capability",
+      "description": "Test the organizational incident response capability.",
+      "domain": "IR",
+      "level": "Level 2",
+      "nist_mapping": "3.6.3",
+      "weight": 3
+    },
+    {
+      "id": "IR.2.096",
+      "title": "Develop and implement response plans",
+      "description": "Develop and implement response plans that provide the details for incident response operations.",
+      "domain": "IR",
+      "level": "Level 2",
+      "nist_mapping": "3.6.1",
+      "weight": 3
+    },
+    {
+      "id": "IR.2.097",
+      "title": "Perform root cause analysis",
+      "description": "Perform a root cause analysis of security incidents and use findings to update incident response procedures.",
+      "domain": "IR",
+      "level": "Level 2",
+      "nist_mapping": "3.6.2",
+      "weight": 3
+    },
+    {
+      "id": "IR.3.098",
+      "title": "Track and analyze incident trends",
+      "description": "Track, analyze, and use information about cyber threats and indicators of compromise to inform decisions about incident detection, containment, eradication, and recovery.",
+      "domain": "IR",
+      "level": "Level 3",
+      "nist_mapping": "3.6.3",
+      "weight": 5
+    },
+    {
+      "id": "MA.2.111",
+      "title": "Perform maintenance on organizational systems",
+      "description": "Perform maintenance on organizational systems. Provide controls on the tools, techniques, mechanisms, and personnel that conduct system maintenance.",
+      "domain": "MA",
+      "level": "Level 2",
+      "nist_mapping": "3.7.1",
+      "weight": 3
+    },
+    {
+      "id": "MA.2.112",
+      "title": "Provide controls on maintenance tools",
+      "description": "Provide controls on the tools, techniques, mechanisms, and personnel that conduct system maintenance.",
+      "domain": "MA",
+      "level": "Level 2",
+      "nist_mapping": "3.7.2",
+      "weight": 3
+    },
+    {
+      "id": "MA.2.113",
+      "title": "Ensure equipment is sanitized prior to removal",
+      "description": "Ensure equipment removed for off-site maintenance is sanitized of any CUI.",
+      "domain": "MA",
+      "level": "Level 2",
+      "nist_mapping": "3.7.3",
+      "weight": 3
+    },
+    {
+      "id": "MP.1.001",
+      "title": "Protect system media containing CUI, both paper and digital",
+      "description": "Protect (i.e., physically control and securely store) system media containing CUI, both paper and digital.",
+      "domain": "MP",
+      "level": "Level 1",
+      "nist_mapping": "3.8.1",
+      "weight": 3
+    },
+    {
+      "id": "MP.1.002",
+      "title": "Limit access to CUI on system media to authorized users",
+      "description": "Limit access to CUI on system media to authorized users.",
+      "domain": "MP",
+      "level": "Level 1",
+      "nist_mapping": "3.8.2",
+      "weight": 3
+    },
+    {
+      "id": "MP.2.120",
+      "title": "Control the use of removable media on system components",
+      "description": "Control the use of removable media on system components.",
+      "domain": "MP",
+      "level": "Level 2",
+      "nist_mapping": "3.8.7",
+      "weight": 3
+    },
+    {
+      "id": "MP.2.121",
+      "title": "Sanitize or destroy system media before disposal",
+      "description": "Sanitize or destroy system media before disposal or reuse.",
+      "domain": "MP",
+      "level": "Level 2",
+      "nist_mapping": "3.8.3",
+      "weight": 3
+    },
+    {
+      "id": "MP.3.122",
+      "title": "Mark media with necessary CUI markings and distribution limitations",
+      "description": "Mark media with necessary CUI markings and distribution limitations.",
+      "domain": "MP",
+      "level": "Level 3",
+      "nist_mapping": "3.8.4",
+      "weight": 5
+    },
+    {
+      "id": "MP.3.123",
+      "title": "Prohibit the use of portable storage without identifiable owner",
+      "description": "Prohibit the use of portable storage devices when such devices have no identifiable owner.",
+      "domain": "MP",
+      "level": "Level 3",
+      "nist_mapping": "3.8.8",
+      "weight": 5
+    },
+    {
+      "id": "PE.1.131",
+      "title": "Limit physical access to authorized individuals",
+      "description": "Limit physical access to organizational information systems, equipment, and the respective operating environments to authorized individuals.",
+      "domain": "PE",
+      "level": "Level 1",
+      "nist_mapping": "3.10.1",
+      "weight": 3
+    },
+    {
+      "id": "PE.1.132",
+      "title": "Escort visitors and monitor visitor activity",
+      "description": "Escort visitors and monitor visitor activity; maintain audit logs of physical access.",
+      "domain": "PE",
+      "level": "Level 1",
+      "nist_mapping": "3.10.2",
+      "weight": 3
+    },
+    {
+      "id": "PE.2.135",
+      "title": "Control and manage physical access devices",
+      "description": "Control and manage physical access devices.",
+      "domain": "PE",
+      "level": "Level 2",
+      "nist_mapping": "3.10.4",
+      "weight": 3
+    },
+    {
+      "id": "PE.3.136",
+      "title": "Enforce safeguarding measures for CUI at alternate work sites",
+      "description": "Enforce safeguarding measures for CUI at alternate work sites.",
+      "domain": "PE",
+      "level": "Level 3",
+      "nist_mapping": "3.10.6",
+      "weight": 5
+    },
+    {
+      "id": "PS.2.127",
+      "title": "Screen individuals prior to authorizing access to systems",
+      "description": "Screen individuals prior to authorizing access to organizational systems containing CUI.",
+      "domain": "PS",
+      "level": "Level 2",
+      "nist_mapping": "3.9.1",
+      "weight": 3
+    },
+    {
+      "id": "PS.2.128",
+      "title": "Ensure CUI is protected during and after personnel actions",
+      "description": "Ensure that organizational systems containing CUI are protected during and after personnel actions such as terminations and transfers.",
+      "domain": "PS",
+      "level": "Level 2",
+      "nist_mapping": "3.9.2",
+      "weight": 3
+    },
+    {
+      "id": "RA.2.141",
+      "title": "Periodically assess risk to operations",
+      "description": "Periodically assess the risk to organizational operations, organizational assets, and individuals, resulting from the operation of organizational systems and the associated processing, storage, or transmission of CUI.",
+      "domain": "RA",
+      "level": "Level 2",
+      "nist_mapping": "3.11.1",
+      "weight": 3
+    },
+    {
+      "id": "RA.2.142",
+      "title": "Scan for vulnerabilities periodically",
+      "description": "Periodically scan organizational systems and applications for vulnerabilities and remediate vulnerabilities in accordance with risk assessments.",
+      "domain": "RA",
+      "level": "Level 2",
+      "nist_mapping": "3.11.2",
+      "weight": 3
+    },
+    {
+      "id": "RA.2.143",
+      "title": "Remediate vulnerabilities in accordance with risk assessments",
+      "description": "Remediate vulnerabilities in accordance with risk assessments.",
+      "domain": "RA",
+      "level": "Level 2",
+      "nist_mapping": "3.11.3",
+      "weight": 3
+    },
+    {
+      "id": "RA.3.144",
+      "title": "Periodically perform risk assessments (advanced)",
+      "description": "Periodically perform risk assessments using a formal risk assessment methodology and document the results.",
+      "domain": "RA",
+      "level": "Level 3",
+      "nist_mapping": "3.11.1",
+      "weight": 5
+    },
+    {
+      "id": "RA.3.145",
+      "title": "Analyze the effectiveness of security solutions",
+      "description": "Analyze the effectiveness of security solutions at least annually to address anticipated risks to the system.",
+      "domain": "RA",
+      "level": "Level 3",
+      "nist_mapping": "3.11.3",
+      "weight": 5
+    },
+    {
+      "id": "SA.2.150",
+      "title": "Receive cyber threat intelligence",
+      "description": "Receive cyber threat intelligence, including indicators of compromise, from information sharing forums and organizations.",
+      "domain": "SA",
+      "level": "Level 2",
+      "nist_mapping": "3.14.1",
+      "weight": 3
+    },
+    {
       "id": "SC.1.175",
-      "title": "Monitor system boundaries",
+      "title": "Monitor, control, and protect organizational communications",
       "description": "Monitor, control, and protect organizational communications (i.e., information transmitted or received by organizational information systems) at the external boundaries and key internal boundaries of the information systems.",
       "domain": "SC",
       "level": "Level 1",
@@ -64,12 +595,111 @@
       "weight": 3
     },
     {
+      "id": "SC.1.176",
+      "title": "Implement subnetworks for publicly accessible system components",
+      "description": "Implement subnetworks for publicly accessible system components that are physically or logically separated from internal networks.",
+      "domain": "SC",
+      "level": "Level 1",
+      "nist_mapping": "3.13.5",
+      "weight": 3
+    },
+    {
+      "id": "SC.3.177",
+      "title": "Employ FIPS-validated cryptography for CUI",
+      "description": "Employ FIPS-validated cryptography when used to protect the confidentiality of CUI.",
+      "domain": "SC",
+      "level": "Level 3",
+      "nist_mapping": "3.13.10",
+      "weight": 5
+    },
+    {
+      "id": "SC.3.187",
+      "title": "Implement cryptographic mechanisms for CUI transmission",
+      "description": "Implement cryptographic mechanisms to prevent unauthorized disclosure of CUI during transmission unless otherwise protected by alternative physical safeguards.",
+      "domain": "SC",
+      "level": "Level 3",
+      "nist_mapping": "3.13.8",
+      "weight": 5
+    },
+    {
       "id": "SI.1.210",
-      "title": "Identify, report, and correct information and system flaws",
-      "description": "Identify, report, and correct information and system flaws in a timely manner.",
+      "title": "Identify, report, and correct information system flaws",
+      "description": "Identify, report, and correct information and information system flaws in a timely manner.",
       "domain": "SI",
       "level": "Level 1",
       "nist_mapping": "3.14.1",
+      "weight": 3
+    },
+    {
+      "id": "SI.1.211",
+      "title": "Provide protection from malicious code",
+      "description": "Provide protection from malicious code at appropriate locations within organizational information systems.",
+      "domain": "SI",
+      "level": "Level 1",
+      "nist_mapping": "3.14.2",
+      "weight": 3
+    },
+    {
+      "id": "SI.1.212",
+      "title": "Monitor system security alerts",
+      "description": "Monitor information system security alerts and advisories and take appropriate actions in response.",
+      "domain": "SI",
+      "level": "Level 1",
+      "nist_mapping": "3.14.3",
+      "weight": 3
+    },
+    {
+      "id": "SI.1.213",
+      "title": "Update malicious code protection mechanisms",
+      "description": "Update malicious code protection mechanisms when new releases are available.",
+      "domain": "SI",
+      "level": "Level 1",
+      "nist_mapping": "3.14.4",
+      "weight": 3
+    },
+    {
+      "id": "SI.2.214",
+      "title": "Perform periodic scans of organizational systems",
+      "description": "Perform periodic scans of organizational systems and real-time scans of files from external sources as files are downloaded, opened, or executed.",
+      "domain": "SI",
+      "level": "Level 2",
+      "nist_mapping": "3.14.6",
+      "weight": 3
+    },
+    {
+      "id": "SR.1.001",
+      "title": "Establish a supply chain risk management process",
+      "description": "Establish a supply chain risk management process, including addressing security risks associated with information and communications technology products and services throughout the system development life cycle.",
+      "domain": "SR",
+      "level": "Level 1",
+      "nist_mapping": "SR-1",
+      "weight": 3
+    },
+    {
+      "id": "SR.1.002",
+      "title": "Identify and assess supply chain risks",
+      "description": "Identify and assess risks to organizational systems and organizations associated with supply chain risk assessment and apply mitigations based on risk assessment.",
+      "domain": "SR",
+      "level": "Level 1",
+      "nist_mapping": "SR-2",
+      "weight": 3
+    },
+    {
+      "id": "SR.2.070",
+      "title": "Manage supply chain risks from external systems services",
+      "description": "Manage risks associated with the use of externally provided information systems or services.",
+      "domain": "SR",
+      "level": "Level 2",
+      "nist_mapping": "SR-3",
+      "weight": 3
+    },
+    {
+      "id": "SR.2.111",
+      "title": "Employ safe disposal of system components",
+      "description": "Employ safe disposal procedures and verification that system components are disposed of properly to prevent unauthorized disclosure of CUI.",
+      "domain": "SR",
+      "level": "Level 2",
+      "nist_mapping": "SR-12",
       "weight": 3
     }
   ]
