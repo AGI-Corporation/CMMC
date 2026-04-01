@@ -383,3 +383,101 @@ async def test_orchestrator_run_assessment_trigger():
     assert "icam" in owner_agents
     assert "data_protection" in owner_agents
     assert "infrastructure" in owner_agents
+    assert "remediation" in owner_agents
+
+
+# ─── Remediation Agent Tests ───────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_remediation_agent_assess():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/remediation/assess")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["agent"] == "remediation"
+    assert data["zt_pillar"] == "Automation & Orchestration"
+    assert len(data["assessments"]) > 0
+    control_ids = [a["control_id"] for a in data["assessments"]]
+    assert "CM.2.061" in control_ids
+    assert "SI.2.214" in control_ids
+    assert "IR.2.093" in control_ids
+    assert "CA.2.157" in control_ids
+
+
+@pytest.mark.anyio
+async def test_remediation_agent_status():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/remediation/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_items" in data
+    assert "by_status" in data
+    assert "by_priority" in data
+    assert "overdue_count" in data
+    assert data["total_items"] > 0
+
+
+@pytest.mark.anyio
+async def test_remediation_agent_playbook():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/remediation/playbook/SI.2.214")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["control_id"] == "SI.2.214"
+    pb = data["playbook"]
+    assert "title" in pb
+    assert "steps" in pb
+    assert len(pb["steps"]) > 0
+    assert "validation_check" in pb
+    assert "estimated_effort_hours" in pb
+
+
+@pytest.mark.anyio
+async def test_remediation_agent_playbook_not_found():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/remediation/playbook/XX.9.999")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_remediation_agent_execute():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post("/api/agents/remediation/remediate/CM.2.062")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["control_id"] == "CM.2.062"
+    assert data["status"] == "in_progress"
+    assert "steps_initiated" in data
+    assert len(data["steps_initiated"]) > 0
+    assert "validation_check" in data
+
+
+@pytest.mark.anyio
+async def test_remediation_agent_ingest():
+    findings = [
+        {"control_id": "RA.2.141", "status": "not_implemented", "findings": ["No risk assessment process"]},
+        {"control_id": "CM.2.061", "status": "partially_implemented", "findings": ["Baseline drift detected"]},
+        {"control_id": "AC.1.001", "status": "implemented", "findings": []},
+    ]
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post("/api/agents/remediation/ingest", json=findings)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ingested"] == 3
+    # Only not_implemented / partially_implemented without existing open records create new items
+    assert "new_remediation_items" in data
+    assert "items" in data
+

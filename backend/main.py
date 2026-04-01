@@ -24,6 +24,7 @@ from agents.infra_agent import agent as infra_agent
 from agents.mistral_agent import agent as mistral
 from agents.ops_agent import agent as ops_agent
 from agents.orchestrator import agent as orchestrator
+from agents.remediation_agent import agent as remediation_agent
 from backend.db.database import init_db
 from backend.middleware.security import SecurityHeadersMiddleware
 from backend.routers import assessment, controls, evidence, reports
@@ -96,6 +97,11 @@ app.include_router(
 )
 app.include_router(
     ops_agent.router, prefix="/api/agents/ops", tags=["Operations Agent"]
+)
+app.include_router(
+    remediation_agent.router,
+    prefix="/api/agents/remediation",
+    tags=["Remediation Agent"],
 )
 
 

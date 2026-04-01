@@ -31,6 +31,7 @@ class AgentType(str, Enum):
     DEVSECOPS = "devsecops"    # DevSecOps/supply chain
     GOVERNANCE = "governance"  # Policy/risk/POA&M
     OPS = "operations"         # IR/SIEM/SOAR
+    REMEDIATION = "remediation"  # Auto-remediation & playbooks
     MISTRAL = "mistral"        # AI analysis engine
 
 
@@ -161,6 +162,7 @@ class ComplianceOrchestrator:
                 AgentType.DEVSECOPS,
                 AgentType.GOVERNANCE,
                 AgentType.OPS,
+                AgentType.REMEDIATION,
             ]
         elif trigger == TaskTrigger.SCHEDULE:
             task.assigned_agents = [
@@ -186,6 +188,7 @@ class ComplianceOrchestrator:
         from agents.icam_agent import agent as icam_module
         from agents.infra_agent import agent as infra_module
         from agents.ops_agent import agent as ops_module
+        from agents.remediation_agent import agent as remediation_module
 
         agent_instances = {
             AgentType.ICAM: icam_module._icam,
@@ -194,6 +197,7 @@ class ComplianceOrchestrator:
             AgentType.DEVSECOPS: devsecops_module._dso,
             AgentType.GOVERNANCE: governance_module._governance,
             AgentType.OPS: ops_module._ops,
+            AgentType.REMEDIATION: remediation_module._remediation,
         }
 
         all_results: List[Dict[str, Any]] = []
