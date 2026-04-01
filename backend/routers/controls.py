@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (AssessmentRecord, ControlRecord, get_db,
-                                 get_latest_assessments)
+from backend.db.database import (AssessmentRecord, ControlRecord, EvidenceRecord,
+                                 get_db, get_latest_assessments)
 from backend.models.control import (CMMCLevel, Control, ControlDomain,
                                     ControlListResponse, ControlResponse,
                                     ControlUpdate, ImplementationStatus)
@@ -200,3 +200,69 @@ async def get_controls_by_domain(
     domain: ControlDomain, db: AsyncSession = Depends(get_db)
 ):
     return await list_controls(domain=domain, db=db)
+
+
+@router.get(
+    "/{control_id}/evidence",
+    summary="List evidence linked to a control",
+    description=(
+        "Return all evidence artifact IDs and metadata linked to a specific CMMC "
+        "control, sourced from the assessment history's evidence_ids lists. "
+        "Maps to AU.2.041 and AU.2.042 (evidence traceability)."
+    ),
+)
+async def list_control_evidence(
+    control_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all evidence records linked to a CMMC control via assessment records."""
+    # Ensure control exists
+    ctrl_result = await db.execute(
+        select(ControlRecord).where(ControlRecord.id == control_id)
+    )
+    ctrl = ctrl_result.scalar_one_or_none()
+    if ctrl is None:
+        raise HTTPException(status_code=404, detail=f"Control {control_id} not found")
+
+    # Collect all evidence IDs referenced in assessments for this control
+    ass_result = await db.execute(
+        select(AssessmentRecord)
+        .where(AssessmentRecord.control_id == control_id)
+        .order_by(AssessmentRecord.assessment_date.desc())
+    )
+    assessments = ass_result.scalars().all()
+
+    seen_ids: set = set()
+    evidence_ids: list = []
+    for a in assessments:
+        for eid in (a.evidence_ids or []):
+            if eid and eid not in seen_ids:
+                seen_ids.add(eid)
+                evidence_ids.append(eid)
+
+    # Fetch the actual EvidenceRecord rows for the collected IDs
+    evidence_rows = []
+    if evidence_ids:
+        ev_result = await db.execute(
+            select(EvidenceRecord).where(EvidenceRecord.id.in_(evidence_ids))
+        )
+        evidence_rows = ev_result.scalars().all()
+
+    return {
+        "control_id": control_id,
+        "control_title": ctrl.title,
+        "evidence_count": len(evidence_rows),
+        "evidence": [
+            {
+                "evidence_id": e.id,
+                "title": e.title,
+                "evidence_type": e.evidence_type,
+                "source_system": e.source_system,
+                "zt_pillar": e.zt_pillar,
+                "description": e.description,
+                "uri": e.uri,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in evidence_rows
+        ],
+    }

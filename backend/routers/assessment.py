@@ -5,7 +5,7 @@ These endpoints become MCP tools: calculate_sprs_score, get_compliance_dashboard
 
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -230,6 +230,7 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
         "operations",
         "remediation",
         "supply_chain",
+        "awareness",
     }
 
     if run.agent_type in STANDARD_RESULT_AGENTS:
@@ -571,3 +572,287 @@ async def list_agent_runs(
         ],
     }
 
+
+
+# ── POAM Management Models ─────────────────────────────────────────────────────
+
+class POAMUpdateRequest(BaseModel):
+    target_completion_date: Optional[datetime] = None
+    notes: Optional[str] = None
+    responsible_party: Optional[str] = None
+    poam_status: Optional[str] = None  # open / in_progress / closed / cancelled
+
+
+class POAMEntry(BaseModel):
+    control_id: str
+    control_title: Optional[str] = None
+    domain: Optional[str] = None
+    level: Optional[str] = None
+    status: str
+    confidence: float
+    assessor: Optional[str] = None
+    assessment_date: Optional[str] = None
+    target_completion_date: Optional[str] = None
+    notes: Optional[str] = None
+    poam_status: str
+    days_open: Optional[int] = None
+
+
+@router.get(
+    "/poam",
+    summary="List all open POA&M entries",
+    description=(
+        "Return a paginated list of controls that have been flagged as requiring a "
+        "Plan of Action & Milestones (POA&M). Entries are sourced from the latest "
+        "assessment record for each control where poam_required='true'. "
+        "Maps to CMMC CA.2.158 and RA.2.141."
+    ),
+)
+async def list_poam_entries(
+    domain: Optional[str] = Query(None, description="Filter by control domain (e.g. AC, IA)"),
+    level: Optional[str] = Query(None, description="Filter by CMMC level (Level 1, Level 2, Level 3)"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all controls with an active POA&M requirement (latest assessment poam_required=true)."""
+    # Fetch all controls, optionally filtered
+    ctrl_query = select(ControlRecord)
+    if domain:
+        ctrl_query = ctrl_query.where(ControlRecord.domain == domain)
+    if level:
+        ctrl_query = ctrl_query.where(ControlRecord.level == level)
+    ctrl_result = await db.execute(ctrl_query)
+    controls = {c.id: c for c in ctrl_result.scalars().all()}
+
+    if not controls:
+        return {"total": 0, "limit": limit, "offset": offset, "entries": []}
+
+    # Fetch latest assessments for these controls
+    assessments_map = await get_latest_assessments(db, control_ids=list(controls.keys()))
+
+    # Collect POA&M entries
+    poam_entries = []
+    now = datetime.now(UTC)
+    for ctrl_id, ctrl in controls.items():
+        assessment = assessments_map.get(ctrl_id)
+        if assessment is None or assessment.poam_required != "true":
+            continue
+
+        days_open = None
+        if assessment.assessment_date:
+            ad = assessment.assessment_date
+            # SQLite returns naive datetimes; normalize to UTC-aware for arithmetic
+            if ad.tzinfo is None:
+                ad = ad.replace(tzinfo=UTC)
+            days_open = (now - ad).days
+
+        # Derive poam_status from status field
+        if assessment.status == "implemented":
+            poam_status = "closed"
+        elif assessment.status == "planned":
+            poam_status = "in_progress"
+        elif assessment.status == "not_implemented":
+            poam_status = "open"
+        else:
+            poam_status = "open"
+
+        poam_entries.append(
+            POAMEntry(
+                control_id=ctrl_id,
+                control_title=ctrl.title,
+                domain=ctrl.domain,
+                level=ctrl.level,
+                status=assessment.status,
+                confidence=assessment.confidence,
+                assessor=assessment.assessor,
+                assessment_date=assessment.assessment_date.isoformat()
+                if assessment.assessment_date
+                else None,
+                target_completion_date=assessment.next_review.isoformat()
+                if assessment.next_review
+                else None,
+                notes=assessment.notes,
+                poam_status=poam_status,
+                days_open=days_open,
+            )
+        )
+
+    total = len(poam_entries)
+    paged = poam_entries[offset: offset + limit]
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "entries": [e.model_dump() for e in paged],
+    }
+
+
+@router.patch(
+    "/poam/{control_id}",
+    summary="Update a POA&M entry's target date and notes",
+    description=(
+        "Update the remediation target date, responsible party, notes, and/or "
+        "POA&M status for the latest assessment of a specific control. "
+        "Maps to CMMC CA.2.158 (plan of action and milestones). "
+        "Creating a new assessment record preserves the full audit trail."
+    ),
+)
+async def update_poam_entry(
+    control_id: str,
+    update: POAMUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update POA&M details for a control by appending a revised assessment record."""
+    # Verify control exists
+    ctrl_result = await db.execute(
+        select(ControlRecord).where(ControlRecord.id == control_id)
+    )
+    ctrl = ctrl_result.scalar_one_or_none()
+    if ctrl is None:
+        raise HTTPException(status_code=404, detail=f"Control {control_id} not found")
+
+    # Get latest assessment
+    ass_result = await db.execute(
+        select(AssessmentRecord)
+        .where(AssessmentRecord.control_id == control_id)
+        .order_by(AssessmentRecord.assessment_date.desc())
+        .limit(1)
+    )
+    current = ass_result.scalar_one_or_none()
+
+    if current is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No assessment found for control {control_id}. Submit an assessment first.",
+        )
+
+    if current.poam_required != "true":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Control {control_id} does not have an active POA&M (poam_required=false).",
+        )
+
+    # Build update notes
+    update_parts = []
+    if update.notes:
+        update_parts.append(update.notes)
+    if update.responsible_party:
+        update_parts.append(f"Responsible party: {update.responsible_party}.")
+    if update.poam_status:
+        update_parts.append(f"POA&M status updated to: {update.poam_status}.")
+    merged_notes = " ".join(update_parts) if update_parts else current.notes
+
+    # Derive implementation status from poam_status
+    new_status = current.status
+    if update.poam_status == "closed":
+        new_status = "implemented"
+    elif update.poam_status == "in_progress":
+        new_status = "planned"
+
+    new_assessment = AssessmentRecord(
+        id=str(uuid.uuid4()),
+        control_id=control_id,
+        system_name=current.system_name,
+        status=new_status,
+        confidence=current.confidence,
+        notes=merged_notes,
+        evidence_ids=list(current.evidence_ids or []),
+        assessor=update.responsible_party or current.assessor,
+        assessment_date=datetime.now(UTC),
+        next_review=update.target_completion_date or current.next_review,
+        poam_required="true" if new_status not in ("implemented", "na") else "false",
+    )
+    db.add(new_assessment)
+    await db.commit()
+
+    return {
+        "updated": True,
+        "control_id": control_id,
+        "control_title": ctrl.title,
+        "new_assessment_id": new_assessment.id,
+        "status": new_assessment.status,
+        "poam_required": new_assessment.poam_required == "true",
+        "target_completion_date": new_assessment.next_review.isoformat()
+        if new_assessment.next_review
+        else None,
+        "notes": new_assessment.notes,
+    }
+
+
+@router.get(
+    "/trend",
+    summary="Compliance trend — assessment counts over time",
+    description=(
+        "Return aggregated assessment submission counts and status breakdowns "
+        "grouped by day or week, over a configurable number of periods. "
+        "Useful for compliance dashboard trend charts. "
+        "Maps to AU.3.045 (correlate audit records) and CA.2.157 (monitor controls)."
+    ),
+)
+async def get_compliance_trend(
+    window: str = Query(
+        "day",
+        description="Aggregation window: 'day' or 'week'",
+        pattern="^(day|week)$",
+    ),
+    periods: int = Query(30, ge=1, le=90, description="Number of periods to return"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return assessment submission counts aggregated by time window.
+
+    Note: SQLite stores datetime values as naive (timezone-unaware) strings.
+    Bucket boundaries are stripped of timezone info before use in WHERE clauses
+    to avoid mixed-aware/naive comparison errors.
+    """
+    from sqlalchemy import func as sqlfunc
+
+    now = datetime.now(UTC)
+    if window == "week":
+        delta = timedelta(weeks=1)
+    else:
+        delta = timedelta(days=1)
+
+    # Build time buckets
+    buckets = []
+    for i in range(periods - 1, -1, -1):
+        bucket_end = now - i * delta
+        bucket_start = bucket_end - delta
+        buckets.append((bucket_start, bucket_end))
+
+    result_rows = []
+    for start, end in buckets:
+        # SQLite stores datetimes as naive strings; strip timezone for comparison
+        start_naive = start.replace(tzinfo=None)
+        end_naive = end.replace(tzinfo=None)
+        q = select(AssessmentRecord).where(
+            AssessmentRecord.assessment_date >= start_naive,
+            AssessmentRecord.assessment_date < end_naive,
+        )
+        r = await db.execute(q)
+        records = r.scalars().all()
+
+        status_counts: Dict[str, int] = {}
+        for rec in records:
+            status_counts[rec.status] = status_counts.get(rec.status, 0) + 1
+
+        result_rows.append(
+            {
+                "period_start": start.date().isoformat(),
+                "period_end": end.date().isoformat(),
+                "total_submissions": len(records),
+                "implemented": status_counts.get("implemented", 0),
+                "partially_implemented": status_counts.get("partially_implemented", 0)
+                + status_counts.get("partial", 0),
+                "planned": status_counts.get("planned", 0),
+                "not_implemented": status_counts.get("not_implemented", 0),
+                "not_started": status_counts.get("not_started", 0),
+            }
+        )
+
+    return {
+        "window": window,
+        "periods": periods,
+        "data": result_rows,
+    }

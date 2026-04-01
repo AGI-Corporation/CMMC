@@ -701,6 +701,33 @@
       "level": "Level 2",
       "nist_mapping": "SR-12",
       "weight": 3
+    },
+    {
+      "id": "AT.2.056",
+      "title": "Ensure personnel are aware of security risks associated with their activities",
+      "description": "Ensure that personnel are aware of the security risks associated with their activities and of the applicable policies, standards, and procedures related to the security of organizational systems.",
+      "domain": "AT",
+      "level": "Level 2",
+      "nist_mapping": "3.2.1",
+      "weight": 3
+    },
+    {
+      "id": "AT.2.057",
+      "title": "Ensure personnel are trained to carry out assigned information security responsibilities",
+      "description": "Ensure that organizational personnel are adequately trained to carry out their assigned information security-related duties and responsibilities.",
+      "domain": "AT",
+      "level": "Level 2",
+      "nist_mapping": "3.2.2",
+      "weight": 3
+    },
+    {
+      "id": "AT.3.058",
+      "title": "Provide security awareness training on recognizing and reporting potential indicators of insider threat",
+      "description": "Provide security awareness training on recognizing and reporting potential indicators of insider threat.",
+      "domain": "AT",
+      "level": "Level 3",
+      "nist_mapping": "3.2.3",
+      "weight": 5
     }
   ]
 }

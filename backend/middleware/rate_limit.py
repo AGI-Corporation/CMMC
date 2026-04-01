@@ -37,6 +37,19 @@ RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "t
 # Endpoints exempt from rate limiting (health probes, OpenAPI docs)
 _EXEMPT_PATHS = {"/health", "/", "/docs", "/redoc", "/openapi.json", "/mcp"}
 
+# Module-level registry so tests can flush all windows
+_instances: list = []
+
+
+def _register_instance(inst: "RateLimitMiddleware") -> None:
+    _instances.append(inst)
+
+
+def reset_all_windows() -> None:
+    """Clear all per-IP rate-limit buckets (intended for test use only)."""
+    for inst in _instances:
+        inst._windows.clear()
+
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
@@ -58,6 +71,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._windows: Dict[str, Deque[float]] = collections.defaultdict(
             collections.deque
         )
+        # Expose a module-level reference for test cleanup
+        _register_instance(self)
 
     def _get_client_ip(self, request: Request) -> str:
         """Extract real client IP, respecting X-Forwarded-For."""

@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.db.database import Base, engine, init_db
 from backend.main import app
+from backend.middleware.rate_limit import reset_all_windows
 
 
 @pytest.fixture(scope="session")
@@ -20,6 +21,8 @@ async def setup_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await init_db()
+    # Flush rate-limit windows so the test suite starts with a clean slate
+    reset_all_windows()
     yield
     # Cleanup
     if os.path.exists("./test_api.db"):
@@ -907,3 +910,416 @@ async def test_list_agent_runs_pagination():
     p1_ids = {r["run_id"] for r in p1["runs"]}
     p2_ids = {r["run_id"] for r in p2["runs"]}
     assert p1_ids.isdisjoint(p2_ids)
+
+
+# ─── AT Domain + Awareness Agent Tests ────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_catalog_has_at_domain():
+    """AT domain controls should be present after catalog expansion."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/controls/?domain=AT")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] >= 3
+    ids = [c["control"]["id"] for c in data["controls"]]
+    assert "AT.2.056" in ids
+    assert "AT.2.057" in ids
+    assert "AT.3.058" in ids
+
+
+@pytest.mark.anyio
+async def test_awareness_agent_assess():
+    """Awareness agent full assessment should return results for all 5 controls."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/agents/awareness/assess")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "run_id" in data
+    assert "results" in data
+    results = data["results"]
+    assert "results" in results
+    control_ids = [r["control_id"] for r in results["results"]]
+    assert "AT.2.056" in control_ids
+    assert "AT.2.057" in control_ids
+    assert "AT.3.058" in control_ids
+    assert "PS.2.127" in control_ids
+    assert "PS.2.128" in control_ids
+
+
+@pytest.mark.anyio
+async def test_awareness_agent_training_status():
+    """Training status endpoint should return per-user records."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/agents/awareness/training-status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "personnel" in data
+    assert "summary" in data
+    assert len(data["personnel"]) >= 6
+    user = data["personnel"][0]
+    assert "awareness_status" in user
+    assert "role_training_status" in user
+    assert "insider_threat_status" in user
+    assert "screening_status" in user
+
+
+@pytest.mark.anyio
+async def test_awareness_agent_personnel():
+    """Personnel endpoint should return PS-focused data."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/agents/awareness/personnel")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "personnel" in data
+    assert data["total"] >= 6
+    # Should detect the terminated-with-no-access-revocation gap
+    assert data["termination_gaps"] >= 1
+    # Verify fields present
+    p = data["personnel"][0]
+    assert "screening_status" in p
+    assert "termination_date" in p
+
+
+@pytest.mark.anyio
+async def test_awareness_agent_run_can_be_promoted():
+    """Awareness agent runs should be promotable via /promote."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        run_resp = await ac.get("/api/agents/awareness/assess")
+        run_id = run_resp.json()["run_id"]
+        promo = await ac.post(f"/api/assessment/promote/{run_id}")
+    assert promo.status_code == 200
+    data = promo.json()
+    assert data["status"] == "promoted"
+    assert data["assessments_created"] == 5  # one per AT/PS control
+
+
+# ─── Evidence-Control Linkage Tests ───────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_link_evidence_to_control():
+    """Link an evidence artifact to a control and verify the link."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # Create an evidence artifact
+        ev_resp = await ac.post(
+            "/api/evidence/",
+            json={
+                "control_id": "IA.1.076",
+                "zt_pillar": "User",
+                "zt_capability_id": "ZT-1.1",
+                "evidence_type": "policy",
+                "title": "Identity verification policy",
+                "description": "Okta identity policy document.",
+                "source_system": "Okta",
+                "uri": "https://okta.example.com/policies/identity.pdf",
+                "reviewer": "alice",
+            },
+        )
+        assert ev_resp.status_code == 200
+        ev_id = ev_resp.json()["id"]
+
+        # Link to an additional control
+        link_resp = await ac.post(
+            f"/api/evidence/{ev_id}/link-control/IA.3.083"
+        )
+    assert link_resp.status_code == 200
+    data = link_resp.json()
+    assert data["evidence_id"] == ev_id
+    assert data["control_id"] == "IA.3.083"
+    assert data["linked"] is True
+
+
+@pytest.mark.anyio
+async def test_link_evidence_idempotent():
+    """Linking the same evidence twice should return already_linked."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        ev_resp = await ac.post(
+            "/api/evidence/",
+            json={
+                "control_id": "AC.1.001",
+                "zt_pillar": "User",
+                "zt_capability_id": "ZT-1.2",
+                "evidence_type": "log",
+                "title": "Access control logs",
+                "description": "Syslog showing AC.1.001 enforcement.",
+                "source_system": "Splunk",
+                "uri": "https://splunk.example.com/ac001.log",
+                "reviewer": "bob",
+            },
+        )
+        ev_id = ev_resp.json()["id"]
+        # Submit an assessment that includes this evidence
+        await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "SC.1.175",
+                "status": "implemented",
+                "confidence": 0.8,
+                "evidence_ids": [ev_id],
+            },
+        )
+        link1 = await ac.post(f"/api/evidence/{ev_id}/link-control/SC.1.175")
+        link2 = await ac.post(f"/api/evidence/{ev_id}/link-control/SC.1.175")
+    assert link1.status_code == 200
+    assert link2.status_code == 200
+    assert link2.json()["action"] == "already_linked"
+
+
+@pytest.mark.anyio
+async def test_link_evidence_unknown_evidence():
+    """Linking nonexistent evidence should return 404."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.post("/api/evidence/nonexistent-uuid/link-control/AC.1.001")
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_link_evidence_unknown_control():
+    """Linking to unknown control should return 404."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        ev_resp = await ac.post(
+            "/api/evidence/",
+            json={
+                "control_id": "AC.1.001",
+                "zt_pillar": "User",
+                "zt_capability_id": "ZT-1.3",
+                "evidence_type": "scan",
+                "title": "Vuln scan",
+                "description": "Nessus scan.",
+                "source_system": "Nessus",
+                "uri": "https://nessus.example.com/scan1",
+                "reviewer": "carol",
+            },
+        )
+        ev_id = ev_resp.json()["id"]
+        resp = await ac.post(f"/api/evidence/{ev_id}/link-control/ZZ.9.999")
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_list_control_evidence():
+    """GET /api/controls/{id}/evidence should return linked evidence."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # Create evidence and link it via assessment submission
+        ev_resp = await ac.post(
+            "/api/evidence/",
+            json={
+                "control_id": "SI.1.210",
+                "zt_pillar": "Application",
+                "zt_capability_id": "ZT-5.1",
+                "evidence_type": "scan",
+                "title": "Patch scan results",
+                "description": "Qualys patch compliance scan.",
+                "source_system": "Qualys",
+                "uri": "https://qualys.example.com/si1210",
+                "reviewer": "dave",
+            },
+        )
+        ev_id = ev_resp.json()["id"]
+        await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "SI.1.210",
+                "status": "implemented",
+                "confidence": 0.9,
+                "evidence_ids": [ev_id],
+            },
+        )
+        list_resp = await ac.get("/api/controls/SI.1.210/evidence")
+    assert list_resp.status_code == 200
+    data = list_resp.json()
+    assert data["control_id"] == "SI.1.210"
+    assert data["evidence_count"] >= 1
+    ev_ids_returned = [e["evidence_id"] for e in data["evidence"]]
+    assert ev_id in ev_ids_returned
+
+
+@pytest.mark.anyio
+async def test_list_control_evidence_unknown():
+    """GET /api/controls/{id}/evidence for unknown control returns 404."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/controls/ZZ.9.999/evidence")
+    assert resp.status_code == 404
+
+
+# ─── POAM Management Tests ─────────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_list_poam_entries_returns_results():
+    """After submitting not_implemented assessments, POAM list should return them."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # Submit a not_implemented assessment (poam auto-flagged)
+        await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "CA.2.157",
+                "status": "not_implemented",
+                "confidence": 0.0,
+                "assessor": "poam-tester",
+            },
+        )
+        resp = await ac.get("/api/assessment/poam")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total" in data
+    assert "entries" in data
+    assert data["total"] >= 1
+    entry = data["entries"][0]
+    assert "control_id" in entry
+    assert "poam_status" in entry
+    assert "status" in entry
+
+
+@pytest.mark.anyio
+async def test_list_poam_filter_by_domain():
+    """POAM list should support domain filtering."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/assessment/poam?domain=CA")
+    assert resp.status_code == 200
+    data = resp.json()
+    for entry in data["entries"]:
+        assert entry["domain"] == "CA"
+
+
+@pytest.mark.anyio
+async def test_update_poam_entry():
+    """PATCH /api/assessment/poam/{control_id} should update target date and notes."""
+    from datetime import UTC, datetime, timedelta
+    target = (datetime.now(UTC) + timedelta(days=90)).isoformat()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # Ensure a POAM entry exists for CA.2.157
+        await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "CA.2.157",
+                "status": "not_implemented",
+                "confidence": 0.0,
+            },
+        )
+        resp = await ac.patch(
+            "/api/assessment/poam/CA.2.157",
+            json={
+                "target_completion_date": target,
+                "notes": "Remediation scheduled for Q3.",
+                "responsible_party": "security-team",
+                "poam_status": "in_progress",
+            },
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["updated"] is True
+    assert data["control_id"] == "CA.2.157"
+    assert "new_assessment_id" in data
+    assert data["notes"] is not None
+
+
+@pytest.mark.anyio
+async def test_update_poam_unknown_control():
+    """PATCH /poam for unknown control should return 404."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.patch(
+            "/api/assessment/poam/ZZ.9.999",
+            json={"notes": "test"},
+        )
+    assert resp.status_code == 404
+
+
+# ─── Compliance Trend Tests ────────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_compliance_trend_day():
+    """Trend endpoint with window=day should return periods data points."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/assessment/trend?window=day&periods=7")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["window"] == "day"
+    assert data["periods"] == 7
+    assert len(data["data"]) == 7
+    row = data["data"][0]
+    assert "period_start" in row
+    assert "period_end" in row
+    assert "total_submissions" in row
+    assert "implemented" in row
+
+
+@pytest.mark.anyio
+async def test_compliance_trend_week():
+    """Trend endpoint with window=week should return weekly buckets."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/assessment/trend?window=week&periods=4")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["window"] == "week"
+    assert len(data["data"]) == 4
+
+
+@pytest.mark.anyio
+async def test_compliance_trend_invalid_window():
+    """Invalid window parameter should return 422."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/assessment/trend?window=month&periods=7")
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_compliance_trend_recent_submissions_appear():
+    """Assessments submitted today should appear in today's trend bucket."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # Submit a fresh assessment
+        await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "RA.2.141",
+                "status": "implemented",
+                "confidence": 0.88,
+            },
+        )
+        resp = await ac.get("/api/assessment/trend?window=day&periods=1")
+    assert resp.status_code == 200
+    data = resp.json()
+    today_bucket = data["data"][0]
+    assert today_bucket["total_submissions"] >= 1
+    assert today_bucket["implemented"] >= 1

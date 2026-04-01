@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_mcp import FastApiMCP
 
+from agents.awareness_agent import agent as awareness_agent
 from agents.data_agent import agent as data_agent
 from agents.devsecops_agent import agent as devsecops
 from agents.governance_agent import agent as governance_agent
@@ -114,6 +115,11 @@ app.include_router(
     supply_chain_agent.router,
     prefix="/api/agents/supply-chain",
     tags=["Supply Chain Agent"],
+)
+app.include_router(
+    awareness_agent.router,
+    prefix="/api/agents/awareness",
+    tags=["Awareness & Training Agent"],
 )
 
 

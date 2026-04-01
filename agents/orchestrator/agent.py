@@ -33,6 +33,7 @@ class AgentType(str, Enum):
     OPS = "operations"         # IR/SIEM/SOAR
     REMEDIATION = "remediation"  # Auto-remediation & playbooks
     SUPPLY_CHAIN = "supply_chain"  # SCRM / SR domain
+    AWARENESS = "awareness"    # Awareness & Training / Personnel Security (AT/PS)
     MISTRAL = "mistral"        # AI analysis engine
 
 

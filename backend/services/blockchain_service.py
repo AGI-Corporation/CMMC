@@ -35,7 +35,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.database import BlockchainTransaction
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
-SIGNING_KEY = os.getenv("BLOCKCHAIN_SIGNING_KEY", "default-dev-signing-key").encode()
+import logging as _logging
+
+_SIGNING_KEY_ENV = os.getenv("BLOCKCHAIN_SIGNING_KEY", "")
+if not _SIGNING_KEY_ENV:
+    _logging.getLogger(__name__).warning(
+        "BLOCKCHAIN_SIGNING_KEY is not set. Using a weak default key. "
+        "Set this environment variable to a strong secret in production."
+    )
+    _SIGNING_KEY_ENV = "default-dev-signing-key"
+
+SIGNING_KEY = _SIGNING_KEY_ENV.encode()
 
 GENESIS_HASH = "0" * 64  # Sentinel previous_hash for the first transaction
 

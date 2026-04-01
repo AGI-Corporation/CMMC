@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import EvidenceRecord, get_db
+from backend.db.database import AssessmentRecord, ControlRecord, EvidenceRecord, get_db
 from backend.models.evidence import (EvidenceCreate, EvidenceListResponse,
                                      EvidenceResponse)
 
@@ -214,3 +214,90 @@ async def delete_evidence(
         raise HTTPException(status_code=404, detail=f"Evidence {evidence_id} not found")
     await db.delete(record)
     return {"deleted": evidence_id}
+
+
+@router.post(
+    "/{evidence_id}/link-control/{control_id}",
+    summary="Link an evidence artifact to an additional CMMC control",
+    description=(
+        "Attach an existing evidence artifact to a CMMC control by adding the "
+        "evidence ID to the latest assessment record for that control. If no "
+        "assessment record exists for the control, a new 'not_started' placeholder "
+        "is created. The evidence record's primary control_id remains unchanged. "
+        "Maps to AU.2.041 (evidence traceability)."
+    ),
+)
+async def link_evidence_to_control(
+    evidence_id: str,
+    control_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Link an evidence artifact to a CMMC control's latest assessment."""
+    # Verify evidence exists
+    ev_result = await db.execute(
+        select(EvidenceRecord).where(EvidenceRecord.id == evidence_id)
+    )
+    evidence = ev_result.scalar_one_or_none()
+    if not evidence:
+        raise HTTPException(status_code=404, detail=f"Evidence {evidence_id} not found")
+
+    # Verify control exists
+    ctrl_result = await db.execute(
+        select(ControlRecord).where(ControlRecord.id == control_id)
+    )
+    if ctrl_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail=f"Control {control_id} not found")
+
+    # Find the latest assessment for this control
+    ass_result = await db.execute(
+        select(AssessmentRecord)
+        .where(AssessmentRecord.control_id == control_id)
+        .order_by(AssessmentRecord.assessment_date.desc())
+        .limit(1)
+    )
+    assessment = ass_result.scalar_one_or_none()
+
+    if assessment is None:
+        # Create a placeholder assessment so we can attach the evidence
+        assessment = AssessmentRecord(
+            id=str(uuid.uuid4()),
+            control_id=control_id,
+            status="not_started",
+            confidence=0.0,
+            notes="Auto-created to link evidence artifact.",
+            evidence_ids=[evidence_id],
+            assessor="system",
+            assessment_date=datetime.now(UTC),
+            poam_required="false",
+        )
+        db.add(assessment)
+        await db.commit()
+        return {
+            "linked": True,
+            "evidence_id": evidence_id,
+            "control_id": control_id,
+            "assessment_id": assessment.id,
+            "action": "created",
+        }
+
+    # Append evidence_id to existing assessment if not already present
+    existing_ids: list = list(assessment.evidence_ids or [])
+    if evidence_id in existing_ids:
+        return {
+            "linked": False,
+            "evidence_id": evidence_id,
+            "control_id": control_id,
+            "assessment_id": assessment.id,
+            "action": "already_linked",
+        }
+
+    existing_ids.append(evidence_id)
+    assessment.evidence_ids = existing_ids
+    await db.commit()
+    return {
+        "linked": True,
+        "evidence_id": evidence_id,
+        "control_id": control_id,
+        "assessment_id": assessment.id,
+        "action": "linked",
+    }
