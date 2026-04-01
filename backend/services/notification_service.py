@@ -47,14 +47,27 @@ WEBHOOK_URL: Optional[str] = os.getenv("WEBHOOK_URL", "")
 WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
 NOTIFY_ENABLED: bool = os.getenv("NOTIFY_ENABLED", "true").lower() == "true"
 
+# Warn at import time if a webhook URL is configured without a signing secret,
+# so that misconfigurations are visible in startup logs rather than silently
+# sending unsigned payloads in production.
+if WEBHOOK_URL and not WEBHOOK_SECRET:
+    logger.warning(
+        "WEBHOOK_URL is set but WEBHOOK_SECRET is empty. "
+        "Outbound compliance event payloads will be sent without a valid HMAC signature. "
+        "Set WEBHOOK_SECRET to enable request signing (X-CMMC-Signature header)."
+    )
+
 # In-memory event log (bounded ring-buffer, used when no webhook URL is set)
 _MAX_LOG_ENTRIES = 500
 _event_log: list = []
 
 
 def _sign_payload(body: bytes) -> str:
-    """Compute HMAC-SHA256 hex signature of the raw payload bytes."""
-    key = WEBHOOK_SECRET.encode() if WEBHOOK_SECRET else b"no-secret"
+    """Compute HMAC-SHA256 hex signature of the raw payload bytes.
+    Returns an empty-keyed HMAC when no WEBHOOK_SECRET is configured;
+    the receiver should treat an absent or zero-key signature as unverified.
+    """
+    key = WEBHOOK_SECRET.encode() if WEBHOOK_SECRET else b""
     return hmac.new(key, body, hashlib.sha256).hexdigest()
 
 
