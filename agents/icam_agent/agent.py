@@ -30,6 +30,8 @@ ICAM_CONTROLS = [
     "AC.2.013",
     "AC.2.015",
     "AC.2.016",
+    "AC.3.017",
+    "AC.3.018",
     "IA.1.076",
     "IA.1.077",
     "IA.2.078",
@@ -348,6 +350,133 @@ class ICAMAgent:
             remediation=remediation,
         )
 
+    def check_separation_of_duties(self) -> ICAMAssessmentResult:
+        """
+        Assess AC.3.017 — Separate duties of individuals to reduce risk of malevolent
+        activity without collusion.
+
+        Checks that privileged users do not simultaneously hold conflicting roles
+        (e.g., both SystemAdmin and Auditor — who audits their own actions).
+        """
+        CONFLICTING_PAIRS = [
+            ("SystemAdmin", "Auditor"),
+            ("CUI_Handler", "SystemAdmin"),
+            ("SecurityOfficer", "SystemAdmin"),
+        ]
+
+        violations = []
+        for u in self.users:
+            if u.account_status != "active":
+                continue
+            role_set = set(u.roles)
+            for r1, r2 in CONFLICTING_PAIRS:
+                if r1 in role_set and r2 in role_set:
+                    violations.append(
+                        f"{u.username} holds conflicting roles: {r1} + {r2}"
+                    )
+
+        findings = []
+        remediation = []
+        if violations:
+            findings.extend(violations)
+            remediation.append(
+                "Remove conflicting role assignments; enforce two-person integrity "
+                "for sensitive operations (AC.3.017)"
+            )
+        else:
+            findings.append(
+                "No conflicting role assignments detected across active user accounts (AC.3.017)."
+            )
+
+        confidence = 1.0 if not violations else max(0.0, 1.0 - len(violations) / max(len(self.users), 1))
+        status = (
+            "implemented"
+            if confidence >= 0.95
+            else ("partially_implemented" if confidence >= 0.6 else "not_implemented")
+        )
+
+        return ICAMAssessmentResult(
+            control_id="AC.3.017",
+            status=status,
+            confidence=round(confidence, 2),
+            findings=findings,
+            evidence_id=str(uuid.uuid4()),
+            remediation=remediation,
+        )
+
+    def check_privilege_escalation_prevention(self) -> ICAMAssessmentResult:
+        """
+        Assess AC.3.018 — Prevent non-privileged users from executing privileged
+        functions and audit the execution of such functions.
+
+        Checks that non-privileged accounts do not hold any roles tagged as
+        privileged, and that all privileged-function executions are attributable
+        to designated privileged accounts.
+        """
+        PRIVILEGED_ROLES = {"SystemAdmin", "SecurityOfficer", "CUI_Handler"}
+
+        # Non-privileged users (privileged=False) who hold a privileged-function role
+        escalation_risks = [
+            u
+            for u in self.users
+            if not u.privileged
+            and u.account_status == "active"
+            and PRIVILEGED_ROLES.intersection(set(u.roles))
+        ]
+        # Privileged users without a recorded access review (no audit trail)
+        no_audit_trail = [
+            u
+            for u in self.users
+            if u.privileged
+            and u.account_status == "active"
+            and not u.last_access_review
+        ]
+
+        findings = []
+        remediation = []
+        if escalation_risks:
+            findings.append(
+                f"{len(escalation_risks)} non-privileged account(s) hold privileged role(s): "
+                + ", ".join(
+                    f"{u.username}({', '.join(set(u.roles) & PRIVILEGED_ROLES)})"
+                    for u in escalation_risks
+                )
+            )
+            remediation.append(
+                "Remove privileged-function roles from non-privileged accounts; "
+                "enforce role-based access gating (AC.3.018)"
+            )
+        if no_audit_trail:
+            findings.append(
+                f"{len(no_audit_trail)} privileged account(s) lack a recorded access review "
+                "(no audit trail for privileged function execution): "
+                + ", ".join(u.username for u in no_audit_trail)
+            )
+            remediation.append(
+                "Enable and retain audit logs for all privileged-function executions (AC.3.018)"
+            )
+        if not findings:
+            findings.append(
+                "No privilege escalation risks or audit-trail gaps detected (AC.3.018)."
+            )
+
+        gap_count = len(escalation_risks) + len(no_audit_trail)
+        confidence = max(0.0, 1.0 - gap_count / max(len(self.users), 1))
+        status = (
+            "implemented"
+            if confidence >= 0.9
+            else ("partially_implemented" if confidence >= 0.6 else "not_implemented")
+        )
+
+        return ICAMAssessmentResult(
+            control_id="AC.3.018",
+            status=status,
+            confidence=round(confidence, 2),
+            findings=findings,
+            evidence_id=str(uuid.uuid4()),
+            remediation=remediation,
+        )
+
     async def run_full_assessment(
         self, db: AsyncSession, trigger: str = "manual"
     ) -> List[Dict[str, Any]]:
@@ -357,6 +486,8 @@ class ICAMAgent:
             self.check_least_privilege(),
             self.check_privileged_access_review(),
             self.check_account_lockout(),
+            self.check_separation_of_duties(),
+            self.check_privilege_escalation_prevention(),
         ]
         results = []
         for a in assessments:

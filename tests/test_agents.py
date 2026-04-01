@@ -45,7 +45,13 @@ async def test_devsecops_assess():
     assert response.status_code == 200
     data = response.json()
     assert data["agent"] == "devsecops"
-    assert "image_scan" in data
+    assert "assessments" in data
+    assert len(data["assessments"]) > 0
+    # Each per-control result should carry the standard fields
+    first = data["assessments"][0]
+    assert "control_id" in first
+    assert "status" in first
+    assert "confidence" in first
 
 
 @pytest.mark.anyio
@@ -520,3 +526,141 @@ async def test_orchestrator_assessment_includes_supply_chain():
         if "owner_agent" in r
     }
     assert "supply_chain" in owner_agents
+
+
+# ---------------------------------------------------------------------------
+# AC.3.017 / AC.3.018 — new ICAM Level-3 checks
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_icam_assess_includes_ac3_controls():
+    """ICAM /assess should return results for AC.3.017 and AC.3.018."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/icam/assess")
+    assert response.status_code == 200
+    data = response.json()
+    control_ids = {a["control_id"] for a in data["assessments"]}
+    assert "AC.3.017" in control_ids, "AC.3.017 separation-of-duties check missing"
+    assert "AC.3.018" in control_ids, "AC.3.018 privilege-escalation check missing"
+
+
+@pytest.mark.anyio
+async def test_icam_separation_of_duties_check():
+    """check_separation_of_duties() returns a valid ICAMAssessmentResult for AC.3.017."""
+    from agents.icam_agent.agent import ICAMAgent
+
+    agent = ICAMAgent(mock_mode=True)
+    result = agent.check_separation_of_duties()
+    assert result.control_id == "AC.3.017"
+    assert result.status in (
+        "implemented",
+        "partially_implemented",
+        "not_implemented",
+    )
+    assert 0.0 <= result.confidence <= 1.0
+    assert isinstance(result.findings, list)
+    assert len(result.findings) > 0
+
+
+@pytest.mark.anyio
+async def test_icam_privilege_escalation_check():
+    """check_privilege_escalation_prevention() returns a valid result for AC.3.018."""
+    from agents.icam_agent.agent import ICAMAgent
+
+    agent = ICAMAgent(mock_mode=True)
+    result = agent.check_privilege_escalation_prevention()
+    assert result.control_id == "AC.3.018"
+    assert result.status in (
+        "implemented",
+        "partially_implemented",
+        "not_implemented",
+    )
+    assert 0.0 <= result.confidence <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# SA.2.150 — new Governance threat-intelligence check
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_governance_assess_includes_sa2150():
+    """Governance /assess should return a result for SA.2.150."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/governance/assess")
+    assert response.status_code == 200
+    data = response.json()
+    control_ids = {a["control_id"] for a in data["assessments"]}
+    assert "SA.2.150" in control_ids, "SA.2.150 threat-intelligence check missing"
+
+
+@pytest.mark.anyio
+async def test_governance_threat_intelligence_check():
+    """check_threat_intelligence_sharing() returns a valid result for SA.2.150."""
+    from agents.governance_agent.agent import GovernanceAgent
+
+    agent = GovernanceAgent(mock_mode=True)
+    result = agent.check_threat_intelligence_sharing()
+    assert result.control_id == "SA.2.150"
+    assert result.status in (
+        "implemented",
+        "partially_implemented",
+        "not_implemented",
+    )
+    assert 0.0 <= result.confidence <= 1.0
+    assert isinstance(result.findings, list)
+    assert len(result.findings) > 0
+
+
+# ---------------------------------------------------------------------------
+# DevSecOps — fixed run_full_assessment return type
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_devsecops_run_full_assessment_returns_list():
+    """run_full_assessment() must return a List[Dict] so the orchestrator can extend()."""
+    import os
+
+    os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test_agents.db")
+    from agents.devsecops_agent.agent import DevSecOpsAgent
+    from backend.db.database import AsyncSessionLocal
+
+    agent = DevSecOpsAgent(mock_mode=True)
+    async with AsyncSessionLocal() as db:
+        results = await agent.run_full_assessment(db, "test-svc", trigger="manual")
+    assert isinstance(results, list), "run_full_assessment must return a list"
+    assert len(results) > 0
+    for item in results:
+        assert isinstance(item, dict)
+        assert "control_id" in item
+        assert "status" in item
+        assert "confidence" in item
+        assert "owner_agent" in item
+        assert item["owner_agent"] == "devsecops"
+
+
+@pytest.mark.anyio
+async def test_orchestrator_run_devsecops_results_in_findings():
+    """Orchestrator ASSESSMENT run should include devsecops owner_agent entries."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post(
+            "/api/orchestrator/run",
+            params={"trigger": "assessment", "scope": "devsecops-regression"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "completed"
+    owner_agents = {
+        r.get("owner_agent")
+        for r in data["findings"].get("results", [])
+        if "owner_agent" in r
+    }
+    assert "devsecops" in owner_agents, "devsecops agent findings missing from orchestrator run"

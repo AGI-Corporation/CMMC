@@ -36,6 +36,7 @@ GOVERNANCE_CONTROLS = [
     "IR.2.092",
     "IR.2.093",
     "IR.2.094",
+    "SA.2.150",
 ]
 
 
@@ -437,6 +438,67 @@ class GovernanceAgent:
         )
         return poam_items
 
+    def check_threat_intelligence_sharing(self) -> GovernanceAssessmentResult:
+        """
+        Assess SA.2.150 — Receive and respond to cyber threat intelligence from
+        information-sharing forums and sources.
+
+        Verifies that the organisation: (1) subscribes to at least one recognised
+        CTI feed, (2) has documented processes for ingesting and acting on threat
+        indicators, and (3) participates in an information-sharing community (e.g.
+        ISACs, CISA AIS, NIST NVD).
+        """
+        # Mock CTI programme state
+        cti_feeds = ["CISA AIS", "NIST NVD"]  # subscribed feeds
+        isa_memberships = []  # ISAC / sector memberships
+        has_documented_process = len(self.policies) > 0  # proxy: policy docs exist
+        has_incident_response_plan = any(
+            "IR" in ",".join(p.cmmc_controls) for p in self.policies
+        )
+
+        findings = []
+        remediation = []
+
+        if not cti_feeds:
+            findings.append("No CTI feed subscriptions found; threat intelligence is not being received (SA.2.150).")
+            remediation.append("Subscribe to CISA AIS and at least one sector ISAC for automated threat indicator sharing.")
+        else:
+            findings.append(f"Subscribed to {len(cti_feeds)} CTI feed(s): {', '.join(cti_feeds)}.")
+
+        if not isa_memberships:
+            findings.append("No sector ISAC/ISAO membership recorded — sharing is receive-only (SA.2.150).")
+            remediation.append("Join a relevant ISAC (e.g., DIB-ISAC) to participate in bidirectional threat sharing.")
+
+        if not has_documented_process:
+            findings.append("No documented procedure for processing received threat indicators (SA.2.150).")
+            remediation.append("Document a threat intelligence intake and response process in the security plan.")
+
+        if not has_incident_response_plan:
+            findings.append("Incident response policy does not reference threat intelligence consumption (SA.2.150).")
+            remediation.append("Update IR plan to include steps for acting on CTI-derived indicators.")
+
+        gap_count = sum([
+            len(cti_feeds) == 0,
+            len(isa_memberships) == 0,
+            not has_documented_process,
+            not has_incident_response_plan,
+        ])
+        confidence = max(0.0, 1.0 - gap_count / 4)
+        status = (
+            "implemented"
+            if confidence >= 0.85
+            else ("partially_implemented" if confidence >= 0.5 else "not_implemented")
+        )
+
+        return GovernanceAssessmentResult(
+            control_id="SA.2.150",
+            status=status,
+            confidence=round(confidence, 2),
+            findings=findings,
+            evidence_id=str(uuid.uuid4()),
+            remediation=remediation,
+        )
+
     async def run_full_assessment(
         self, db: AsyncSession, trigger: str = "manual"
     ) -> List[Dict[str, Any]]:
@@ -444,6 +506,7 @@ class GovernanceAgent:
         sync_assessments = [
             self.check_policy_documentation(),
             self.check_risk_assessment(),
+            self.check_threat_intelligence_sharing(),
         ]
         async_assessment = await self.check_c3pao_readiness(db)
         all_assessments = sync_assessments + [async_assessment]
@@ -452,6 +515,7 @@ class GovernanceAgent:
             "CA.2.157": "Visibility & Analytics",
             "RA.2.141": "Visibility & Analytics",
             "CA.2.159": "Automation & Orchestration",
+            "SA.2.150": "Visibility & Analytics",
         }
 
         results = []

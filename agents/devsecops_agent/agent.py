@@ -146,43 +146,66 @@ class DevSecOpsAgent:
 
     async def run_full_assessment(
         self, db: AsyncSession, service_name: str = "cmmc-api", trigger: str = "manual"
-    ) -> Dict[str, Any]:
-        """Run complete DevSecOps assessment pipeline."""
+    ) -> List[Dict[str, Any]]:
+        """Run complete DevSecOps assessment pipeline.
+
+        Returns a list of per-control result dicts that can be directly consumed
+        by the orchestrator's ``all_results.extend()`` call.
+        """
         image_scan = self.scan_container_image(service_name)
         sbom = self.generate_sbom(service_name)
         pipeline = self.evaluate_pipeline_gates(f"{service_name}-pipeline")
+
+        # Build per-control entries so the orchestrator can aggregate uniformly
+        controls_evaluated = list(
+            set(
+                image_scan["cmmc_controls"]
+                + sbom["cmmc_controls"]
+                + pipeline["cmmc_controls"]
+            )
+        )
+
         confidence = (
             (1.0 if image_scan["overall_risk"] == "pass" else 0.5) * 0.4
             + pipeline["confidence_score"] * 0.4
             + (1.0 if sbom["high_risk_components"] == 0 else 0.7) * 0.2
         )
+        confidence = round(confidence, 2)
         status = "implemented" if confidence >= 0.9 else "partially_implemented"
-        result = {
-            "agent": "devsecops",
-            "service": service_name,
-            "zt_pillar": "Application",
-            "overall_confidence": round(confidence, 2),
-            "image_scan": image_scan,
-            "sbom": sbom,
-            "pipeline_gates": pipeline,
-            "status": status,
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
+        timestamp = datetime.now(UTC).isoformat()
 
-        # Persist result
+        results = [
+            {
+                "control_id": control_id,
+                "zt_pillar": "Application",
+                "status": status,
+                "confidence": confidence,
+                "findings": {
+                    "service": service_name,
+                    "image_scan": image_scan,
+                    "sbom": sbom,
+                    "pipeline_gates": pipeline,
+                },
+                "remediation": (
+                    "Review CVE findings and update base image"
+                    if image_scan["overall_risk"] != "pass"
+                    else "No critical findings; maintain current posture"
+                ),
+                "evidence_id": f"dso-{control_id.lower().replace('.', '-')}-{uuid.uuid4().hex[:8]}",
+                "assessed_at": timestamp,
+                "owner_agent": "devsecops",
+            }
+            for control_id in sorted(controls_evaluated)
+        ]
+
+        # Persist aggregate run record
         record = AgentRunRecord(
             id=str(uuid.uuid4()),
             agent_type="devsecops",
             trigger=trigger,
             scope=service_name,
-            controls_evaluated=list(
-                set(
-                    image_scan["cmmc_controls"]
-                    + sbom["cmmc_controls"]
-                    + pipeline["cmmc_controls"]
-                )
-            ),
-            findings=result,
+            controls_evaluated=controls_evaluated,
+            findings={"results": results},
             status="completed",
             created_at=datetime.now(UTC),
             completed_at=datetime.now(UTC),
@@ -190,7 +213,7 @@ class DevSecOpsAgent:
         db.add(record)
         await db.commit()
 
-        return result
+        return results
 
 
 router = APIRouter()
@@ -202,7 +225,14 @@ _dso = DevSecOpsAgent()
 )
 async def assess_service(service_name: str, db: AsyncSession = Depends(get_db)):
     """Container scan + SBOM + pipeline gates - ZT Application Pillar evidence."""
-    return await _dso.run_full_assessment(db, service_name)
+    results = await _dso.run_full_assessment(db, service_name)
+    return {
+        "agent": "devsecops",
+        "zt_pillar": "Application",
+        "assessments": results,
+        "controls_evaluated": [r["control_id"] for r in results],
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
 
 
 @router.post("/scan-image", summary="Scan container image for CVEs")
