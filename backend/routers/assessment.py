@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.database import (AgentRunRecord, AssessmentRecord,
                                  ControlRecord, get_db, get_latest_assessments)
 from backend.services import blockchain_service as bc
+from backend.services import notification_service as notify
 
 router = APIRouter()
 
@@ -440,6 +441,17 @@ async def submit_assessment(
     )
 
     await db.commit()
+
+    # Fire POAM notification if this assessment flagged a gap
+    if poam_needed:
+        notify.notify_poam_flagged(
+            control_id=submission.control_id,
+            status=submission.status,
+            confidence=submission.confidence,
+            assessor=submission.assessor or "manual",
+            notes=submission.notes,
+        )
+
     return AssessmentSubmissionResponse(
         submission_id=submission_id,
         control_id=submission.control_id,
@@ -855,4 +867,117 @@ async def get_compliance_trend(
         "window": window,
         "periods": periods,
         "data": result_rows,
+    }
+
+
+@router.get(
+    "/summary",
+    summary="Per-domain compliance summary with SPRS contribution",
+    description=(
+        "Return per-domain assessment status counts and the SPRS score contribution "
+        "for each domain. Useful for identifying the highest-impact remediation targets. "
+        "Maps to CA.2.157 (continuous monitoring) and RA.2.141 (risk assessment)."
+    ),
+)
+async def get_assessment_summary(
+    db: AsyncSession = Depends(get_db),
+):
+    """Aggregate assessment status counts and SPRS deductions by CMMC domain."""
+    # Load all controls
+    ctrl_result = await db.execute(select(ControlRecord))
+    controls = ctrl_result.scalars().all()
+
+    # Build control map and get latest assessments
+    ctrl_map = {c.id: c for c in controls}
+    assessments_map = await get_latest_assessments(db)
+
+    # Aggregate by domain
+    domain_data: Dict[str, Dict] = {}
+    for ctrl in controls:
+        d = ctrl.domain
+        if d not in domain_data:
+            domain_data[d] = {
+                "domain": d,
+                "total_controls": 0,
+                "implemented": 0,
+                "partially_implemented": 0,
+                "planned": 0,
+                "not_implemented": 0,
+                "not_started": 0,
+                "na": 0,
+                "sprs_deduction": 0,
+                "avg_confidence": [],
+            }
+        domain_data[d]["total_controls"] += 1
+
+        assessment = assessments_map.get(ctrl.id)
+        status = assessment.status if assessment else "not_started"
+        confidence = assessment.confidence if assessment else 0.0
+
+        # Normalise status key
+        if status == "partial":
+            status = "partially_implemented"
+
+        if status in domain_data[d]:
+            domain_data[d][status] += 1
+        else:
+            domain_data[d]["not_started"] += 1
+
+        if status in ("not_implemented", "not_started"):
+            domain_data[d]["sprs_deduction"] += ctrl.score_value or 1
+        elif status == "partially_implemented":
+            domain_data[d]["sprs_deduction"] += (ctrl.score_value or 1) // 2
+
+        if assessment:
+            domain_data[d]["avg_confidence"].append(confidence)
+
+    # Finalise avg_confidence
+    summary_rows = []
+    for row in domain_data.values():
+        confidences = row.pop("avg_confidence")
+        row["avg_confidence"] = round(sum(confidences) / len(confidences), 3) if confidences else 0.0
+        row["compliance_pct"] = round(
+            row["implemented"] / row["total_controls"] * 100, 1
+        ) if row["total_controls"] else 0.0
+        summary_rows.append(row)
+
+    # Sort by sprs_deduction descending (highest impact first)
+    summary_rows.sort(key=lambda r: r["sprs_deduction"], reverse=True)
+
+    total_sprs = max(-203, 110 - sum(r["sprs_deduction"] for r in summary_rows))
+
+    return {
+        "sprs_score": total_sprs,
+        "total_controls": len(controls),
+        "domains": summary_rows,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+
+
+@router.get(
+    "/notifications",
+    summary="List recent compliance notification events",
+    description=(
+        "Return recent compliance notification events fired by the platform "
+        "(POAM flags, agent findings, blockchain alerts). Events are stored in "
+        "an in-process ring buffer (last 500 events). Filter by event_type and "
+        "severity. Maps to IR.2.093 (track incidents) and AU.2.042 (review logs)."
+    ),
+)
+async def list_notifications(
+    event_type: Optional[str] = Query(
+        None,
+        description="Filter by event type: poam_flagged | agent_finding | blockchain_alert",
+    ),
+    severity: Optional[str] = Query(
+        None, description="Filter by severity: critical | high | medium | low | info"
+    ),
+    limit: int = Query(50, ge=1, le=500),
+):
+    """Return recent compliance notification events from the in-process log."""
+    events = notify.get_event_log(event_type=event_type, severity=severity, limit=limit)
+    return {
+        "total": len(events),
+        "limit": limit,
+        "events": events,
     }

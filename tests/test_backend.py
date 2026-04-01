@@ -940,11 +940,10 @@ async def test_awareness_agent_assess():
         resp = await ac.get("/api/agents/awareness/assess")
     assert resp.status_code == 200
     data = resp.json()
-    assert "run_id" in data
-    assert "results" in data
-    results = data["results"]
-    assert "results" in results
-    control_ids = [r["control_id"] for r in results["results"]]
+    assert "agent" in data
+    assert data["agent"] == "awareness"
+    assert "assessments" in data
+    control_ids = [r["control_id"] for r in data["assessments"]]
     assert "AT.2.056" in control_ids
     assert "AT.2.057" in control_ids
     assert "AT.3.058" in control_ids
@@ -996,8 +995,13 @@ async def test_awareness_agent_run_can_be_promoted():
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
-        run_resp = await ac.get("/api/agents/awareness/assess")
-        run_id = run_resp.json()["run_id"]
+        # Trigger a fresh assessment
+        await ac.get("/api/agents/awareness/assess")
+        # Find the latest awareness run
+        runs_resp = await ac.get("/api/assessment/runs?agent_type=awareness")
+        runs_data = runs_resp.json()
+        assert runs_data["total"] >= 1
+        run_id = runs_data["runs"][0]["run_id"]
         promo = await ac.post(f"/api/assessment/promote/{run_id}")
     assert promo.status_code == 200
     data = promo.json()
@@ -1323,3 +1327,297 @@ async def test_compliance_trend_recent_submissions_appear():
     today_bucket = data["data"][0]
     assert today_bucket["total_submissions"] >= 1
     assert today_bucket["implemented"] >= 1
+
+
+# ─── ICAM Privileged Access Review Tests ──────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_icam_assess_includes_privileged_and_lockout():
+    """ICAM full assessment should now include IA.3.084 and AC.2.013 checks."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/agents/icam/assess")
+    assert resp.status_code == 200
+    data = resp.json()
+    control_ids = [r["control_id"] for r in data["assessments"]]
+    assert "IA.3.083" in control_ids  # MFA coverage
+    assert "AC.2.007" in control_ids  # least privilege
+    assert "IA.3.084" in control_ids  # privileged access review
+    assert "AC.2.013" in control_ids  # account lockout/dormancy
+
+
+@pytest.mark.anyio
+async def test_icam_privileged_access_endpoint():
+    """GET /api/agents/icam/privileged-access should return privileged user data."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/agents/icam/privileged-access")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "privileged_users" in data
+    assert "strong_auth_count" in data
+    assert "review_overdue_count" in data
+    assert "records" in data
+    assert data["privileged_users"] >= 1
+    record = data["records"][0]
+    assert "strong_auth" in record
+    assert "review_overdue" in record
+    assert "days_since_access_review" in record
+
+
+# ─── Notification Service Tests ───────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_poam_submit_fires_notification():
+    """Submitting a not_implemented assessment should fire a POAM notification."""
+    from backend.services.notification_service import get_event_log, _event_log
+    # Clear event log
+    _event_log.clear()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "SC.1.175",
+                "status": "not_implemented",
+                "confidence": 0.0,
+                "assessor": "notif-tester",
+            },
+        )
+    events = get_event_log(event_type="poam_flagged")
+    assert len(events) >= 1
+    evt = events[0]
+    assert evt["event_type"] == "poam_flagged"
+    assert evt["control_id"] == "SC.1.175"
+    assert evt["severity"] in ("critical", "high", "medium")
+
+
+@pytest.mark.anyio
+async def test_notifications_endpoint():
+    """GET /api/assessment/notifications should return recent events."""
+    from backend.services.notification_service import _event_log
+    _event_log.clear()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # Fire a POAM event
+        await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "IA.2.078",
+                "status": "not_implemented",
+                "confidence": 0.1,
+            },
+        )
+        resp = await ac.get("/api/assessment/notifications")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "events" in data
+    assert data["total"] >= 1
+
+
+@pytest.mark.anyio
+async def test_notifications_filter():
+    """Notification endpoint should support event_type and severity filtering."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get(
+            "/api/assessment/notifications?event_type=poam_flagged&severity=high"
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    for evt in data["events"]:
+        assert evt["event_type"] == "poam_flagged"
+        assert evt["severity"] == "high"
+
+
+@pytest.mark.anyio
+async def test_implemented_submit_no_notification():
+    """Submitting an implemented assessment should NOT fire a POAM notification."""
+    from backend.services.notification_service import _event_log
+    _event_log.clear()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        await ac.post(
+            "/api/assessment/submit",
+            json={
+                "control_id": "AC.1.001",
+                "status": "implemented",
+                "confidence": 0.95,
+            },
+        )
+    from backend.services.notification_service import get_event_log
+    events = get_event_log(event_type="poam_flagged")
+    assert len(events) == 0
+
+
+# ─── Assessment Summary Tests ─────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_assessment_summary():
+    """GET /api/assessment/summary should return per-domain stats."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # Submit a few assessments across domains first
+        for control_id, status in [
+            ("AC.1.001", "implemented"),
+            ("IA.1.076", "not_implemented"),
+            ("AT.2.056", "partially_implemented"),
+        ]:
+            await ac.post(
+                "/api/assessment/submit",
+                json={"control_id": control_id, "status": status, "confidence": 0.5},
+            )
+        resp = await ac.get("/api/assessment/summary")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "sprs_score" in data
+    assert "total_controls" in data
+    assert "domains" in data
+    assert len(data["domains"]) >= 1
+    domain_names = [d["domain"] for d in data["domains"]]
+    assert "AC" in domain_names
+    # Each domain entry has required fields
+    domain = data["domains"][0]
+    assert "total_controls" in domain
+    assert "implemented" in domain
+    assert "sprs_deduction" in domain
+    assert "compliance_pct" in domain
+
+
+@pytest.mark.anyio
+async def test_assessment_summary_sorted_by_sprs_deduction():
+    """Domains should be sorted by SPRS deduction descending."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/assessment/summary")
+    data = resp.json()
+    deductions = [d["sprs_deduction"] for d in data["domains"]]
+    assert deductions == sorted(deductions, reverse=True)
+
+
+# ─── Maturity Heatmap Tests ────────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_maturity_heatmap_structure():
+    """GET /api/reports/maturity-heatmap should return pillar_rollup and matrix."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/maturity-heatmap")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "pillar_rollup" in data
+    assert "matrix" in data
+    assert "generated_at" in data
+    assert len(data["pillar_rollup"]) == 7  # 7 ZT pillars
+    rollup = data["pillar_rollup"][0]
+    assert "pillar" in rollup
+    assert "domains" in rollup
+    assert "maturity_score" in rollup
+    assert "total_controls" in rollup
+    assert "implemented" in rollup
+    assert "avg_confidence" in rollup
+
+
+@pytest.mark.anyio
+async def test_maturity_heatmap_user_pillar_includes_at():
+    """User pillar in heatmap should include AT domain (added in session 2)."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/maturity-heatmap")
+    data = resp.json()
+    user_pillar = next(p for p in data["pillar_rollup"] if p["pillar"] == "User")
+    assert "AT" in user_pillar["domains"]
+
+
+@pytest.mark.anyio
+async def test_maturity_heatmap_sorted_ascending():
+    """Pillars in heatmap should be sorted by maturity_score ascending (lowest first)."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/maturity-heatmap")
+    data = resp.json()
+    scores = [p["maturity_score"] for p in data["pillar_rollup"]]
+    assert scores == sorted(scores)
+
+
+@pytest.mark.anyio
+async def test_maturity_heatmap_cell_fields():
+    """Each matrix cell should have pillar, domain, maturity_score, avg_confidence."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/maturity-heatmap")
+    data = resp.json()
+    for cell in data["matrix"]:
+        assert "pillar" in cell
+        assert "domain" in cell
+        assert "total_controls" in cell
+        assert "implemented" in cell
+        assert "avg_confidence" in cell
+        assert "maturity_score" in cell
+
+
+# ─── Dashboard AT/Awareness Integration Test ──────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_dashboard_includes_awareness_agent_and_at_domain():
+    """Dashboard should list awareness agent and AT in User pillar domains."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/dashboard")
+    assert resp.status_code == 200
+    data = resp.json()
+    agent_names = [a["name"] for a in data["agents"]]
+    assert "awareness" in agent_names
+    user_pillar = next(p for p in data["zt_pillars"] if p["pillar"] == "User")
+    assert "AT" in user_pillar["domains"]
+
+
+# ─── Orchestrator ASSESSMENT trigger includes Awareness ─────────────────────
+
+
+@pytest.mark.anyio
+async def test_orchestrator_task_includes_awareness():
+    """Creating an ASSESSMENT task should include awareness agent."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.post(
+            "/api/orchestrator/task?trigger=assessment&scope=full-system"
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    agents = data.get("assigned_agents", [])
+    assert "awareness" in agents
+
+
+@pytest.mark.anyio
+async def test_orchestrator_schedule_trigger_includes_awareness():
+    """SCHEDULE trigger should also include awareness agent."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.post(
+            "/api/orchestrator/task?trigger=schedule&scope=scheduled-review"
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    agents = data.get("assigned_agents", [])
+    assert "awareness" in agents

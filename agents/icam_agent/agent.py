@@ -216,6 +216,138 @@ class ICAMAgent:
             remediation=remediation,
         )
 
+    def check_privileged_access_review(self) -> ICAMAssessmentResult:
+        """
+        Assess IA.3.084 — Employ physical/hardware authenticators for privileged access.
+        Also checks IA.2.078 — Unique identification for all users and processes.
+        """
+        now = datetime.now(UTC)
+        ACCESS_REVIEW_DAYS = 90
+
+        privileged = [u for u in self.users if u.privileged and u.account_status == "active"]
+        # IA.3.084: privileged users must use strong (fido2/totp) authenticators
+        weak_auth = [
+            u for u in privileged if u.mfa_type not in ("fido2", "totp", "hardware")
+        ]
+        # IA.2.078: every user must have a unique role assignment (no shared accounts)
+        role_sets = [frozenset(u.roles) for u in self.users]
+        duplicate_roles = len(role_sets) != len(set(role_sets))
+        # Access review cadence: privileged users reviewed within 90 days
+        overdue_reviews = [
+            u for u in privileged
+            if not u.last_access_review
+            or (now - u.last_access_review).days > ACCESS_REVIEW_DAYS
+        ]
+
+        findings = []
+        remediation = []
+        if weak_auth:
+            findings.append(
+                f"{len(weak_auth)} privileged account(s) using weak/no MFA type: "
+                + ", ".join(f"{u.username}({u.mfa_type})" for u in weak_auth)
+            )
+            remediation.append(
+                "Migrate privileged accounts to FIDO2 hardware tokens (IA.3.084)"
+            )
+        if duplicate_roles:
+            findings.append(
+                "Duplicate role-set assignments detected; shared accounts may violate IA.2.078"
+            )
+            remediation.append(
+                "Assign unique roles per user; eliminate shared/generic accounts (IA.2.078)"
+            )
+        if overdue_reviews:
+            findings.append(
+                f"{len(overdue_reviews)} privileged account(s) have not been reviewed in "
+                f"{ACCESS_REVIEW_DAYS} days: "
+                + ", ".join(u.username for u in overdue_reviews)
+            )
+            remediation.append(
+                f"Conduct privileged-access reviews at least every {ACCESS_REVIEW_DAYS} days"
+            )
+
+        gap_count = len(weak_auth) + (1 if duplicate_roles else 0) + len(overdue_reviews)
+        max_issues = len(privileged) + 1 + len(privileged)
+        confidence = max(0.0, 1.0 - gap_count / max(max_issues, 1))
+        status = (
+            "implemented"
+            if confidence >= 0.9
+            else ("partially_implemented" if confidence >= 0.6 else "not_implemented")
+        )
+        if not findings:
+            findings = [
+                f"All {len(privileged)} privileged accounts use strong MFA and are current on reviews (IA.3.084)."
+            ]
+
+        return ICAMAssessmentResult(
+            control_id="IA.3.084",
+            status=status,
+            confidence=round(confidence, 2),
+            findings=findings,
+            evidence_id=str(uuid.uuid4()),
+            remediation=remediation,
+        )
+
+    def check_account_lockout(self) -> ICAMAssessmentResult:
+        """
+        Assess AC.2.013 — Employ security safeguards to protect against unauthorized
+        remote access (session controls and account lockout policy).
+        Checks for stale accounts that remain active without recent logins.
+        """
+        now = datetime.now(UTC)
+        # Accounts with no login in 180 days that are still active
+        stale_active = [
+            u for u in self.users
+            if u.account_status == "active"
+            and u.last_login is not None
+            and (now - u.last_login).days > 180
+        ]
+        # Accounts that have never logged in but are active
+        never_logged_in = [
+            u for u in self.users
+            if u.account_status == "active" and u.last_login is None
+        ]
+
+        findings = []
+        remediation = []
+        if stale_active:
+            findings.append(
+                f"{len(stale_active)} account(s) active but no login in >180 days: "
+                + ", ".join(u.username for u in stale_active)
+            )
+            remediation.append(
+                "Disable accounts inactive >180 days; automate via JML lifecycle (AC.2.013)"
+            )
+        if never_logged_in:
+            findings.append(
+                f"{len(never_logged_in)} account(s) have never logged in but remain active: "
+                + ", ".join(u.username for u in never_logged_in)
+            )
+            remediation.append(
+                "Audit and disable service/bot accounts that have never authenticated"
+            )
+
+        gap_ratio = (len(stale_active) + len(never_logged_in)) / max(len(self.users), 1)
+        confidence = max(0.0, 1.0 - gap_ratio)
+        status = (
+            "implemented"
+            if confidence >= 0.9
+            else ("partially_implemented" if confidence >= 0.6 else "not_implemented")
+        )
+        if not findings:
+            findings = [
+                "No stale or dormant active accounts detected (AC.2.013)."
+            ]
+
+        return ICAMAssessmentResult(
+            control_id="AC.2.013",
+            status=status,
+            confidence=round(confidence, 2),
+            findings=findings,
+            evidence_id=str(uuid.uuid4()),
+            remediation=remediation,
+        )
+
     async def run_full_assessment(
         self, db: AsyncSession, trigger: str = "manual"
     ) -> List[Dict[str, Any]]:
@@ -223,6 +355,8 @@ class ICAMAgent:
         assessments = [
             self.check_mfa_coverage(),
             self.check_least_privilege(),
+            self.check_privileged_access_review(),
+            self.check_account_lockout(),
         ]
         results = []
         for a in assessments:
@@ -296,4 +430,52 @@ async def list_users():
             }
             for u in _icam.users
         ],
+    }
+
+
+@router.get(
+    "/privileged-access",
+    summary="Privileged access review: authenticator strength and account lifecycle",
+    description=(
+        "Return per-account privileged access review including authenticator type "
+        "(IA.3.084), access-review currency, and account dormancy (AC.2.013). "
+        "Intended for quarterly privileged-user access reviews."
+    ),
+)
+async def get_privileged_access_review():
+    """Privileged access review for IA.3.084 and AC.2.013."""
+    now = datetime.now(UTC)
+    privileged = [u for u in _icam.users if u.privileged]
+
+    def _days_since(dt):
+        if dt is None:
+            return None
+        return (now - dt).days
+
+    records = [
+        {
+            "user_id": u.user_id,
+            "username": u.username,
+            "roles": u.roles,
+            "privileged": u.privileged,
+            "account_status": u.account_status,
+            "mfa_type": u.mfa_type,
+            "strong_auth": u.mfa_type in ("fido2", "totp", "hardware"),
+            "days_since_login": _days_since(u.last_login),
+            "days_since_access_review": _days_since(u.last_access_review),
+            "review_overdue": (
+                u.last_access_review is None
+                or (now - u.last_access_review).days > 90
+            ),
+        }
+        for u in privileged
+    ]
+
+    return {
+        "privileged_users": len(privileged),
+        "strong_auth_count": sum(1 for r in records if r["strong_auth"]),
+        "review_overdue_count": sum(1 for r in records if r["review_overdue"]),
+        "records": records,
+        "controls": ["IA.3.084", "AC.2.013"],
+        "timestamp": now.isoformat(),
     }

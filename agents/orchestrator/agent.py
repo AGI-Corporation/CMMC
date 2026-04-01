@@ -84,7 +84,7 @@ class ComplianceOrchestrator:
 
     # ZT Pillar -> CMMC domains mapping (DoD ZT Strategy alignment)
     ZT_DOMAIN_MAP = {
-        "User": ["AC", "IA", "PS"],
+        "User": ["AC", "IA", "PS", "AT"],
         "Device": ["CM", "MA", "PE"],
         "Network": ["SC", "AC"],
         "Application": ["CM", "CA", "SI"],
@@ -166,6 +166,7 @@ class ComplianceOrchestrator:
                 AgentType.OPS,
                 AgentType.REMEDIATION,
                 AgentType.SUPPLY_CHAIN,
+                AgentType.AWARENESS,
             ]
         elif trigger == TaskTrigger.SCHEDULE:
             task.assigned_agents = [
@@ -173,6 +174,7 @@ class ComplianceOrchestrator:
                 AgentType.INFRA,
                 AgentType.GOVERNANCE,
                 AgentType.OPS,
+                AgentType.AWARENESS,
             ]
         else:  # MANUAL
             task.assigned_agents = [AgentType.GOVERNANCE]
@@ -185,6 +187,7 @@ class ComplianceOrchestrator:
         Dispatch a compliance task to assigned agents and aggregate findings.
         Agent imports are deferred inside the method to avoid circular imports.
         """
+        from agents.awareness_agent import agent as awareness_module
         from agents.data_agent import agent as data_module
         from agents.devsecops_agent import agent as devsecops_module
         from agents.governance_agent import agent as governance_module
@@ -203,6 +206,7 @@ class ComplianceOrchestrator:
             AgentType.OPS: ops_module._ops,
             AgentType.REMEDIATION: remediation_module._remediation,
             AgentType.SUPPLY_CHAIN: supply_chain_module._scrm,
+            AgentType.AWARENESS: awareness_module._awareness,
         }
 
         all_results: List[Dict[str, Any]] = []

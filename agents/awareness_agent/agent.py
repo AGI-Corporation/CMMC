@@ -505,8 +505,15 @@ class AwarenessAgent:
 
     # ── Full Assessment ─────────────────────────────────────────────────────────
 
-    async def run_full_assessment(self, db: AsyncSession) -> Dict[str, Any]:
-        results = [
+    async def run_full_assessment(
+        self, db: AsyncSession, trigger: str = "manual"
+    ) -> List[Dict[str, Any]]:
+        """Run all AT/PS assessments. Returns a list of per-control result dicts
+        (same schema as ICAM/infra/governance agents) so the orchestrator can
+        aggregate them with `all_results.extend(results)`.
+        Also persists an AgentRunRecord for audit.
+        """
+        check_results = [
             self.check_security_awareness(),
             self.check_role_based_training(),
             self.check_insider_threat_training(),
@@ -514,46 +521,39 @@ class AwarenessAgent:
             self.check_termination_procedures(),
         ]
 
+        result_dicts = [
+            {
+                "control_id": r.control_id,
+                "zt_pillar": "User",
+                "status": r.status,
+                "confidence": r.confidence,
+                "findings": r.findings,
+                "evidence_id": r.evidence_id,
+                "owner_agent": "awareness",
+            }
+            for r in check_results
+        ]
+
         run_id = str(uuid.uuid4())
         run = AgentRunRecord(
             id=run_id,
             agent_type="awareness",
-            trigger="manual",
+            trigger=trigger,
             scope="AT+PS domain assessment",
             controls_evaluated=AWARENESS_CONTROLS,
-            findings={
-                "results": [
-                    {
-                        "control_id": r.control_id,
-                        "status": r.status,
-                        "confidence": r.confidence,
-                        "findings": r.findings,
-                        "evidence_id": r.evidence_id,
-                    }
-                    for r in results
-                ],
-                "summary": {
-                    "total_controls": len(results),
-                    "implemented": sum(1 for r in results if r.status == "implemented"),
-                    "partially_implemented": sum(
-                        1 for r in results if r.status == "partially_implemented"
-                    ),
-                    "not_implemented": sum(
-                        1 for r in results if r.status == "not_implemented"
-                    ),
-                },
-            },
+            findings={"results": result_dicts},
             status="completed",
             completed_at=datetime.now(UTC),
         )
         db.add(run)
         await db.commit()
-        return {"run_id": run_id, "results": run.findings}
+        return result_dicts
 
 
 # ── FastAPI Router ──────────────────────────────────────────────────────────────
 
 router = APIRouter()
+_awareness = AwarenessAgent(mock_mode=True)
 
 
 @router.get(
@@ -567,9 +567,14 @@ router = APIRouter()
     ),
 )
 async def run_awareness_assessment(db: AsyncSession = Depends(get_db)):
-    agent = AwarenessAgent(mock_mode=True)
-    result = await agent.run_full_assessment(db)
-    return result
+    results = await _awareness.run_full_assessment(db)
+    return {
+        "agent": "awareness",
+        "zt_pillar": "User",
+        "assessments": results,
+        "controls_evaluated": [r["control_id"] for r in results],
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
 
 
 @router.get(
