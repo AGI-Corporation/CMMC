@@ -8,7 +8,7 @@ All evidence records include ZT pillar, capability ID, and control mappings.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -105,6 +105,64 @@ async def list_evidence(
             created_at=r.created_at,
         )
         for r in records
+    ]
+    return EvidenceListResponse(total=len(items), evidence=items)
+
+
+@router.get(
+    "/review-due",
+    response_model=EvidenceListResponse,
+    summary="List evidence artifacts that have exceeded their review cycle",
+)
+async def list_review_due(
+    days_overdue: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return evidence artifacts whose review cycle has elapsed.
+
+    An artifact is due for review when:
+        created_at + review_cycle_days ≤ today + days_overdue
+
+    Set days_overdue=0 (default) to find all currently overdue items.
+    Set days_overdue=30 to also include items that will become overdue within 30 days.
+
+    Maps to AU.2.042 (review and analysis of audit records) and
+    CA.2.157 (periodic security assessment).
+    """
+    now = datetime.now(UTC)
+    # We fetch all and filter in Python to keep the SQLite-compatible approach
+    # (SQLite stores datetimes as strings; arithmetic is simpler in Python)
+    result = await db.execute(select(EvidenceRecord))
+    records = result.scalars().all()
+
+    due_records = []
+    for r in records:
+        if r.review_cycle_days and r.review_cycle_days > 0 and r.created_at:
+            # SQLite returns naive datetimes; compare in UTC-naive space
+            created = r.created_at.replace(tzinfo=None)
+            review_due_date = created + timedelta(days=r.review_cycle_days)
+            threshold = now.replace(tzinfo=None) + timedelta(days=days_overdue)
+            if review_due_date <= threshold:
+                due_records.append(r)
+
+    items = [
+        EvidenceResponse(
+            id=r.id,
+            control_id=r.control_id,
+            zt_pillar=r.zt_pillar,
+            zt_capability_id=r.zt_capability_id,
+            evidence_type=r.evidence_type,
+            title=r.title,
+            description=r.description,
+            source_system=r.source_system,
+            uri=r.uri,
+            reviewer=r.reviewer,
+            review_cycle_days=r.review_cycle_days,
+            metadata=r.metadata_ or {},
+            created_at=r.created_at,
+        )
+        for r in due_records
     ]
     return EvidenceListResponse(total=len(items), evidence=items)
 

@@ -30,6 +30,7 @@ class ControlDomain(str, Enum):
     SA = "SA"  # Situational Awareness
     SC = "SC"  # System and Communications Protection
     SI = "SI"  # System and Information Integrity
+    SR = "SR"  # Supply Chain Risk Management
 
 
 class ImplementationStatus(str, Enum):
@@ -37,6 +38,7 @@ class ImplementationStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     IMPLEMENTED = "implemented"
     NOT_APPLICABLE = "not_applicable"
+    NOT_IMPLEMENTED = "not_implemented"
     PARTIALLY_IMPLEMENTED = "partially_implemented"
     PLANNED = "planned"
 

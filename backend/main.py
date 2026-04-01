@@ -25,9 +25,11 @@ from agents.mistral_agent import agent as mistral
 from agents.ops_agent import agent as ops_agent
 from agents.orchestrator import agent as orchestrator
 from agents.remediation_agent import agent as remediation_agent
+from agents.supply_chain_agent import agent as supply_chain_agent
 from backend.db.database import init_db
+from backend.middleware.rate_limit import RateLimitMiddleware
 from backend.middleware.security import SecurityHeadersMiddleware
-from backend.routers import assessment, controls, evidence, hipaa, reports
+from backend.routers import assessment, blockchain, controls, evidence, hipaa, reports
 
 load_dotenv()
 
@@ -69,6 +71,9 @@ app.add_middleware(
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
 
+# Add Rate Limiting Middleware (runs before security headers in reverse order)
+app.add_middleware(RateLimitMiddleware)
+
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
 # Core Routers
@@ -77,6 +82,7 @@ app.include_router(assessment.router, prefix="/api/assessment", tags=["Assessmen
 app.include_router(evidence.router, prefix="/api/evidence", tags=["Evidence"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 app.include_router(hipaa.router, prefix="/api/hipaa", tags=["HIPAA Overlay"])
+app.include_router(blockchain.router, prefix="/api/blockchain", tags=["Blockchain Audit"])
 
 # Agent Routers
 app.include_router(
@@ -103,6 +109,11 @@ app.include_router(
     remediation_agent.router,
     prefix="/api/agents/remediation",
     tags=["Remediation Agent"],
+)
+app.include_router(
+    supply_chain_agent.router,
+    prefix="/api/agents/supply-chain",
+    tags=["Supply Chain Agent"],
 )
 
 

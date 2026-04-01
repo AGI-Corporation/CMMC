@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.database import (AgentRunRecord, AssessmentRecord,
                                  ControlRecord, get_db, get_latest_assessments)
+from backend.services import blockchain_service as bc
 
 router = APIRouter()
 
@@ -228,6 +229,7 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
         "governance",
         "operations",
         "remediation",
+        "supply_chain",
     }
 
     if run.agent_type in STANDARD_RESULT_AGENTS:
@@ -298,6 +300,19 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
             status_code=400,
             detail=f"Promotion not supported for agent type '{run.agent_type}'.",
         )
+
+    # Record the promotion event on the immutable audit chain
+    await bc.record_event(
+        db,
+        event_type="assessment_promoted",
+        actor=f"agent:{run.agent_type}",
+        payload={
+            "run_id": run_id,
+            "agent_type": run.agent_type,
+            "assessments_created": promoted_count,
+            "promoted_at": datetime.now(UTC).isoformat(),
+        },
+    )
 
     await db.commit()
     return {

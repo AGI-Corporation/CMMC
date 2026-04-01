@@ -481,3 +481,42 @@ async def test_remediation_agent_ingest():
     assert "new_remediation_items" in data
     assert "items" in data
 
+
+
+# ─── Supply Chain Agent Tests ─────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_supply_chain_assess_agent():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/agents/supply-chain/assess")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["agent"] == "supply_chain"
+    assert data["zt_pillar"] == "Application"
+    control_ids = [a["control_id"] for a in data["assessments"]]
+    assert "SR.1.001" in control_ids
+    assert "SR.2.111" in control_ids
+
+
+@pytest.mark.anyio
+async def test_orchestrator_assessment_includes_supply_chain():
+    """ASSESSMENT trigger should include supply_chain agent results."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post(
+            "/api/orchestrator/run",
+            params={"trigger": "assessment", "scope": "full-cmmc-sr-test"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "completed"
+    owner_agents = {
+        r.get("owner_agent")
+        for r in data["findings"].get("results", [])
+        if "owner_agent" in r
+    }
+    assert "supply_chain" in owner_agents

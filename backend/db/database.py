@@ -94,6 +94,26 @@ class AgentRunRecord(Base):
     completed_at = Column(DateTime)
 
 
+class BlockchainTransaction(Base):
+    """
+    Immutable audit ledger for assessment promotions and key compliance events.
+    Each record stores a SHA-256 hash of its payload chained to the previous
+    record's hash, forming a tamper-evident Merkle chain.  An HMAC-SHA256
+    signature (keyed by BLOCKCHAIN_SIGNING_KEY env var) authenticates each entry.
+    """
+
+    __tablename__ = "blockchain_transactions"
+    id = Column(String, primary_key=True, index=True)
+    sequence = Column(Integer, nullable=False)  # monotonically increasing
+    event_type = Column(String, nullable=False)  # assessment_promoted / control_updated / etc.
+    actor = Column(String)               # agent name or "manual"
+    payload_hash = Column(String, nullable=False)  # SHA-256 of JSON payload
+    previous_hash = Column(String, nullable=False)  # hash of prior TX; "genesis" for first
+    signature = Column(String, nullable=False)      # HMAC-SHA256 of (payload_hash + previous_hash)
+    payload = Column(JSON, default=dict)            # original event data
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+
 async def init_db():
     """Create all tables on startup."""
     async with engine.begin() as conn:

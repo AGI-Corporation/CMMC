@@ -321,6 +321,7 @@ async def get_dashboard(
             {"name": "governance", "endpoint": "/api/agents/governance"},
             {"name": "operations", "endpoint": "/api/agents/ops"},
             {"name": "remediation", "endpoint": "/api/agents/remediation"},
+            {"name": "supply_chain", "endpoint": "/api/agents/supply-chain"},
         ],
     }
 
