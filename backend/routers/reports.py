@@ -23,6 +23,16 @@ from backend.db.database import (AssessmentRecord, ControlRecord,
 
 router = APIRouter()
 
+ZT_PILLAR_DOMAINS = {
+    "User": ["AC", "IA", "PS"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA"],
+}
+
 
 def get_status_emoji(status: str) -> str:
     """Map implementation status to a visual emoji for better scannability."""
@@ -94,13 +104,12 @@ async def generate_ssp(
     )
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
-    total_controls_count = len(controls)
-    compliance_pct = (
-        (status_counts["implemented"] / total_controls_count * 100)
-        if total_controls_count > 0
-        else 0
-    )
-    progress_bar = get_progress_bar(compliance_pct)
+    # Calculate Pillar Progress
+    pillar_stats = {}
+    for pillar, domains in ZT_PILLAR_DOMAINS.items():
+        p_ctrls = [c.id for c in controls.values() if c.domain in domains]
+        impl = sum(1 for cid in p_ctrls if assessments_dict.get(cid) and assessments_dict[cid].status == "implemented")
+        pillar_stats[pillar] = (impl / len(p_ctrls) * 100) if p_ctrls else 0
 
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
@@ -142,13 +151,13 @@ async def generate_ssp(
 
 | ZT Pillar | CMMC Domains | Status |
 |-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
+| User | AC, IA, PS | {get_progress_bar(pillar_stats['User'])} |
+| Device | CM, MA, PE | {get_progress_bar(pillar_stats['Device'])} |
+| Network | SC, AC | {get_progress_bar(pillar_stats['Network'])} |
+| Application | CM, CA, SI | {get_progress_bar(pillar_stats['Application'])} |
+| Data | MP, SC, AU | {get_progress_bar(pillar_stats['Data'])} |
+| Visibility & Analytics | AU, IR, RA | {get_progress_bar(pillar_stats['Visibility & Analytics'])} |
+| Automation & Orchestration | IR, SI, CA | {get_progress_bar(pillar_stats['Automation & Orchestration'])} |
 
 ## 3. Assessment Findings
 
