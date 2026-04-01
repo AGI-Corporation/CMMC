@@ -26,8 +26,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "max-age=31536000; includeSubDomains"
         )
 
-        # Content Security Policy - restrict where the site can be embedded
-        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        # Content Security Policy - defense-in-depth against XSS and clickjacking
+        # default-src 'self' restricts all resources to the same origin by default
+        # script-src and style-src allow 'unsafe-inline' to support FastAPI Swagger UI
+        # img-src 'self' and data: allow local images and base64-encoded icons
+        csp_directives = [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+            "img-src 'self' data: https://fastapi.tiangolo.com",
+            "frame-ancestors 'none'",
+            "connect-src 'self'",
+        ]
+        response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
 
         # Referrer Policy - only send referrer for same-origin requests
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
