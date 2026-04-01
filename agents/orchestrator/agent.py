@@ -215,7 +215,15 @@ class ComplianceOrchestrator:
                     db, trigger=task.trigger.value
                 )
                 all_results.extend(results)
-            except Exception:
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).error(
+                    "Agent %s failed during task %s: %s",
+                    agent_type.value,
+                    task.id,
+                    exc,
+                    exc_info=True,
+                )
                 all_results.append(
                     {
                         "agent": agent_type.value,

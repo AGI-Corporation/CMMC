@@ -27,7 +27,7 @@ from agents.orchestrator import agent as orchestrator
 from agents.remediation_agent import agent as remediation_agent
 from backend.db.database import init_db
 from backend.middleware.security import SecurityHeadersMiddleware
-from backend.routers import assessment, controls, evidence, reports
+from backend.routers import assessment, controls, evidence, hipaa, reports
 
 load_dotenv()
 
@@ -76,6 +76,7 @@ app.include_router(controls.router, prefix="/api/controls", tags=["Controls"])
 app.include_router(assessment.router, prefix="/api/assessment", tags=["Assessment"])
 app.include_router(evidence.router, prefix="/api/evidence", tags=["Evidence"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
+app.include_router(hipaa.router, prefix="/api/hipaa", tags=["HIPAA Overlay"])
 
 # Agent Routers
 app.include_router(

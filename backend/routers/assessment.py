@@ -220,36 +220,56 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
     findings = run.findings
     promoted_count = 0
 
-    # Logic for ICAM promotion
-    if run.agent_type == "icam":
+    # Agents that emit a standard {"results": [...]} findings structure
+    STANDARD_RESULT_AGENTS = {
+        "icam",
+        "data_protection",
+        "infrastructure",
+        "governance",
+        "operations",
+        "remediation",
+    }
+
+    if run.agent_type in STANDARD_RESULT_AGENTS:
+        # Standard format: findings["results"] is a list of assessment dicts,
+        # each with control_id, status, confidence, findings[], evidence_id.
         results = findings.get("results", [])
         for res in results:
+            ctrl_id = res.get("control_id")
+            if not ctrl_id:
+                continue
+            finding_msgs = res.get("findings", [])
+            notes_text = (
+                f"Promoted from {run.agent_type} agent run {run_id}."
+                + (f" Findings: {', '.join(finding_msgs)}" if finding_msgs else "")
+            )
+            evidence_id = res.get("evidence_id")
             new_ass = AssessmentRecord(
                 id=str(uuid.uuid4()),
-                control_id=res["control_id"],
-                status=res["status"],
-                confidence=res["confidence"],
-                notes=f"Promoted from {run.agent_type} agent run {run_id}. Findings: {', '.join(res['findings'])}",
-                evidence_ids=[res["evidence_id"]],
+                control_id=ctrl_id,
+                status=res.get("status", "not_started"),
+                confidence=res.get("confidence", 0.0),
+                notes=notes_text,
+                evidence_ids=[evidence_id] if evidence_id else [],
                 assessor=f"Agent: {run.agent_type}",
                 assessment_date=datetime.now(UTC),
                 poam_required=(
                     "true"
-                    if res["status"]
-                    in ["partial", "not_implemented", "partially_implemented"]
+                    if res.get("status") in [
+                        "partial", "not_implemented", "partially_implemented"
+                    ]
                     else "false"
                 ),
             )
             db.add(new_ass)
             promoted_count += 1
 
-    # Logic for DevSecOps promotion
     elif run.agent_type == "devsecops":
-        # DSO provides overall confidence and detailed scan results
-        # We'll map to specific controls it evaluated
-        controls = run.controls_evaluated
+        # DevSecOps provides overall confidence at the run level rather than per-control
+        controls = run.controls_evaluated or []
         overall_conf = findings.get("overall_confidence", 0.0)
         status = findings.get("status", "partially_implemented")
+        service = findings.get("service", "")
 
         for cid in controls:
             new_ass = AssessmentRecord(
@@ -257,8 +277,11 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
                 control_id=cid,
                 status=status,
                 confidence=overall_conf,
-                notes=f"Promoted from {run.agent_type} agent run {run_id} for service {findings.get('service')}.",
-                evidence_ids=[findings.get("image_scan", {}).get("evidence_id")],
+                notes=f"Promoted from {run.agent_type} agent run {run_id}"
+                      + (f" for service {service}." if service else "."),
+                evidence_ids=[findings.get("image_scan", {}).get("evidence_id")]
+                if findings.get("image_scan", {}).get("evidence_id")
+                else [],
                 assessor=f"Agent: {run.agent_type}",
                 assessment_date=datetime.now(UTC),
                 poam_required=(
@@ -270,9 +293,16 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
             db.add(new_ass)
             promoted_count += 1
 
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Promotion not supported for agent type '{run.agent_type}'.",
+        )
+
     await db.commit()
     return {
         "status": "promoted",
         "run_id": run_id,
+        "agent_type": run.agent_type,
         "assessments_created": promoted_count,
     }

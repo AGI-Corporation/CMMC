@@ -4,11 +4,14 @@ AGI Corporation 2026
 
 Generates System Security Plans (SSP) and Plans of Action & Milestones (POA&M)
 from the current assessment state. Output formats: Markdown, JSON, CSV.
+Also exports NIST OSCAL (Open Security Controls Assessment Language) JSON for
+C3PAO submissions.
 """
 
 import csv
 import io
 import json
+import uuid
 from datetime import UTC, date, datetime
 from typing import Any, Dict, List
 
@@ -317,5 +320,223 @@ async def get_dashboard(
             {"name": "infrastructure", "endpoint": "/api/agents/infra"},
             {"name": "governance", "endpoint": "/api/agents/governance"},
             {"name": "operations", "endpoint": "/api/agents/ops"},
+            {"name": "remediation", "endpoint": "/api/agents/remediation"},
         ],
     }
+
+
+@router.get(
+    "/oscal",
+    summary="Export SSP as NIST OSCAL JSON (C3PAO-ready)",
+)
+async def export_oscal(
+    system_name: str = "AGI Corp CMMC System",
+    organization: str = "AGI Corporation",
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate an NIST OSCAL (Open Security Controls Assessment Language) System
+    Security Plan in JSON format, compatible with C3PAO assessment submissions
+    and NIST OSCAL validation tooling.
+
+    The export follows the OSCAL SSP schema (NIST SP 800-18 / NIST OSCAL 1.1).
+    Includes system characteristics, implemented components, and control
+    implementation statements derived from the current assessment state.
+    """
+    assessments_map = await get_latest_assessments(db)
+    controls_result = await db.execute(select(ControlRecord))
+    controls = {c.id: c for c in controls_result.scalars().all()}
+
+    system_id = str(uuid.uuid4())
+    now_iso = datetime.now(UTC).isoformat()
+
+    # ── Implemented components (one logical component per ZT pillar) ───────────
+    components = [
+        {
+            "uuid": str(uuid.uuid4()),
+            "type": "software",
+            "title": f"{pillar} Controls Implementation",
+            "description": f"Implementation component for CMMC controls under the {pillar} ZT pillar.",
+            "status": {"state": "operational"},
+        }
+        for pillar in [
+            "User", "Device", "Network", "Application",
+            "Data", "Visibility & Analytics", "Automation & Orchestration",
+        ]
+    ]
+
+    # ── Control implementation statements ─────────────────────────────────────
+    implemented_requirements = []
+    for ctrl_id, ctrl in controls.items():
+        assessment = assessments_map.get(ctrl_id)
+        status = assessment.status if assessment else "not_started"
+        confidence = assessment.confidence if assessment else 0.0
+        notes = assessment.notes if assessment else ""
+
+        oscal_status_map = {
+            "implemented": "implemented",
+            "partially_implemented": "partially-implemented",
+            "partial": "partially-implemented",
+            "planned": "planned",
+            "not_implemented": "not-implemented",
+            "not_started": "not-implemented",
+            "na": "not-applicable",
+        }
+
+        implemented_requirements.append(
+            {
+                "uuid": str(uuid.uuid4()),
+                "control-id": ctrl_id.lower().replace(".", "-"),
+                "description": ctrl.description or "",
+                "statements": [
+                    {
+                        "statement-id": f"{ctrl_id.lower().replace('.', '-')}_smt",
+                        "uuid": str(uuid.uuid4()),
+                        "description": notes or f"Control {ctrl_id} implementation statement.",
+                        "by-components": [
+                            {
+                                "component-uuid": components[0]["uuid"],
+                                "uuid": str(uuid.uuid4()),
+                                "description": notes or f"Implementation of {ctrl_id}.",
+                                "implementation-status": {
+                                    "state": oscal_status_map.get(status, "not-implemented"),
+                                },
+                                "remarks": f"Confidence: {confidence:.0%}. ZT Pillar: {ctrl.zt_pillar or 'N/A'}.",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+    oscal_ssp = {
+        "system-security-plan": {
+            "uuid": system_id,
+            "metadata": {
+                "title": f"{system_name} — CMMC 2.0 Level 2 System Security Plan",
+                "last-modified": now_iso,
+                "version": "1.0",
+                "oscal-version": "1.1.2",
+                "published": now_iso,
+                "roles": [
+                    {"id": "prepared-by", "title": "Prepared by"},
+                    {"id": "prepared-for", "title": "Prepared for"},
+                    {"id": "content-approver", "title": "Content Approver"},
+                    {"id": "isso", "title": "Information System Security Officer"},
+                ],
+                "parties": [
+                    {
+                        "uuid": str(uuid.uuid4()),
+                        "type": "organization",
+                        "name": organization,
+                        "remarks": "Organization responsible for system security.",
+                    }
+                ],
+            },
+            "import-profile": {
+                "href": "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-171/rev2/json/NIST_SP-800-171_rev2_profile.json",
+                "remarks": "NIST SP 800-171 Rev 2 control profile (CMMC 2.0 Level 2 baseline).",
+            },
+            "system-characteristics": {
+                "system-ids": [{"id": system_id, "identifier-type": "https://ietf.org/rfc/rfc4122"}],
+                "system-name": system_name,
+                "description": (
+                    f"{system_name} processes Controlled Unclassified Information (CUI) "
+                    "in support of DoD contracts and is subject to CMMC 2.0 Level 2 requirements."
+                ),
+                "security-sensitivity-level": "moderate",
+                "system-information": {
+                    "information-types": [
+                        {
+                            "uuid": str(uuid.uuid4()),
+                            "title": "Controlled Unclassified Information (CUI)",
+                            "description": "CUI as defined by EO 13556 and 32 CFR Part 2002.",
+                            "categorizations": [
+                                {
+                                    "system": "https://doi.org/10.6028/NIST.SP.800-60v2r1",
+                                    "information-type-ids": ["C.2.8.12"],
+                                }
+                            ],
+                            "confidentiality-impact": {"base": "moderate", "selected": "moderate"},
+                            "integrity-impact": {"base": "moderate", "selected": "moderate"},
+                            "availability-impact": {"base": "moderate", "selected": "low"},
+                        }
+                    ]
+                },
+                "security-impact-level": {
+                    "security-objective-confidentiality": "moderate",
+                    "security-objective-integrity": "moderate",
+                    "security-objective-availability": "low",
+                },
+                "status": {"state": "operational"},
+                "authorization-boundary": {
+                    "description": (
+                        "The authorization boundary encompasses all information systems, "
+                        "components, and services that process, store, or transmit CUI."
+                    )
+                },
+                "remarks": f"Generated by AGI Corporation CMMC Compliance Platform on {now_iso}",
+            },
+            "system-implementation": {
+                "users": [
+                    {
+                        "uuid": str(uuid.uuid4()),
+                        "title": "Privileged Users",
+                        "description": "System administrators and privileged accounts with elevated access.",
+                        "role-ids": ["isso"],
+                    },
+                    {
+                        "uuid": str(uuid.uuid4()),
+                        "title": "General Users",
+                        "description": "Non-privileged users with standard access to CUI systems.",
+                    },
+                ],
+                "components": components,
+                "inventory-items": [
+                    {
+                        "uuid": str(uuid.uuid4()),
+                        "description": "Primary application server hosting CMMC platform.",
+                        "implemented-components": [{"component-uuid": components[0]["uuid"]}],
+                        "props": [
+                            {"name": "asset-type", "value": "os"},
+                            {"name": "is-scanned", "value": "yes"},
+                        ],
+                    }
+                ],
+            },
+            "control-implementation": {
+                "description": (
+                    "This section documents the implementation status of each CMMC 2.0 "
+                    "Level 2 control (NIST SP 800-171 Rev 2) for this system."
+                ),
+                "implemented-requirements": implemented_requirements,
+            },
+            "back-matter": {
+                "resources": [
+                    {
+                        "uuid": str(uuid.uuid4()),
+                        "title": "NIST SP 800-171 Rev 2",
+                        "rlinks": [
+                            {"href": "https://csrc.nist.gov/publications/detail/sp/800-171/rev-2/final"}
+                        ],
+                    },
+                    {
+                        "uuid": str(uuid.uuid4()),
+                        "title": "CMMC 2.0 Level 2 Assessment Guide",
+                        "rlinks": [
+                            {"href": "https://www.acq.osd.mil/cmmc/"}
+                        ],
+                    },
+                ]
+            },
+        }
+    }
+
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=oscal_ssp,
+        headers={
+            "Content-Disposition": f'attachment; filename="oscal_ssp_{system_name.replace(" ", "_")}.json"',
+            "Content-Type": "application/json",
+        },
+    )
