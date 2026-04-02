@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.database import (AgentRunRecord, AssessmentRecord,
-                                 ControlRecord, get_db)
+                                 ControlRecord, get_db, get_latest_assessments)
 
 
 class AgentType(str, Enum):
@@ -157,23 +157,6 @@ class ComplianceOrchestrator:
         self.task_queue.append(task)
         return task
 
-    async def _get_latest_assessments(self, db: AsyncSession):
-        sub_q = (
-            select(
-                AssessmentRecord.control_id,
-                func.max(AssessmentRecord.assessment_date).label("max_date"),
-            )
-            .group_by(AssessmentRecord.control_id)
-            .subquery()
-        )
-        query = select(AssessmentRecord).join(
-            sub_q,
-            (AssessmentRecord.control_id == sub_q.c.control_id)
-            & (AssessmentRecord.assessment_date == sub_q.c.max_date),
-        )
-        result = await db.execute(query)
-        return {a.control_id: a for a in result.scalars().all()}
-
     async def compute_sprs_score(self, db: AsyncSession) -> Dict[str, Any]:
         """Compute SPRS score using methodology from assessment.py."""
         result = await db.execute(select(ControlRecord))
@@ -182,7 +165,9 @@ class ComplianceOrchestrator:
         deductions_list = []
         implemented_count = not_implemented_count = 0
 
-        assessments_map = await self._get_latest_assessments(db)
+        assessments_map = await get_latest_assessments(
+            db, columns=[AssessmentRecord.control_id, AssessmentRecord.status]
+        )
 
         for c in controls:
             cid = c.id
@@ -209,7 +194,14 @@ class ComplianceOrchestrator:
     async def compute_zt_scorecard(self, db: AsyncSession) -> List[Dict[str, Any]]:
         """Generate per-ZT-pillar maturity scorecard from database."""
         scorecard = []
-        assessments_map = await self._get_latest_assessments(db)
+        assessments_map = await get_latest_assessments(
+            db,
+            columns=[
+                AssessmentRecord.control_id,
+                AssessmentRecord.status,
+                AssessmentRecord.confidence,
+            ],
+        )
 
         for pillar, domains in self.ZT_DOMAIN_MAP.items():
             query = select(ControlRecord).where(ControlRecord.domain.in_(domains))
