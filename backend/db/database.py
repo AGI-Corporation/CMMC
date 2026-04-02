@@ -137,11 +137,17 @@ async def get_db():
             await session.close()
 
 
-async def get_latest_assessments(db: AsyncSession, control_ids: list[str] = None):
+async def get_latest_assessments(
+    db: AsyncSession, control_ids: list[str] = None, columns: list = None
+):
     """
     Shared helper to fetch the latest AssessmentRecord for each control.
     Optionally filtered by a list of control_ids for better performance.
+    Supports selective column fetching via the 'columns' argument.
     """
+    if control_ids is not None and not control_ids:
+        return {}
+
     sub_q = select(
         AssessmentRecord.control_id,
         func.max(AssessmentRecord.assessment_date).label("max_date"),
@@ -152,11 +158,23 @@ async def get_latest_assessments(db: AsyncSession, control_ids: list[str] = None
 
     sub_q = sub_q.subquery()
 
-    query = select(AssessmentRecord).join(
+    # Determine what to select: either the full model or specific columns
+    selection = list(columns) if columns else [AssessmentRecord]
+
+    # Ensure control_id is always in selection for dictionary keying
+    if columns and AssessmentRecord.control_id not in columns:
+        selection.append(AssessmentRecord.control_id)
+
+    query = select(*selection).join(
         sub_q,
         (AssessmentRecord.control_id == sub_q.c.control_id)
         & (AssessmentRecord.assessment_date == sub_q.c.max_date),
     )
 
     result = await db.execute(query)
-    return {a.control_id: a for a in result.scalars().all()}
+
+    if columns:
+        # result.all() returns Row objects which are indexable and have ._mapping
+        return {a.control_id: a for a in result.all()}
+    else:
+        return {a.control_id: a for a in result.scalars().all()}
