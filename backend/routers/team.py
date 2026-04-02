@@ -93,6 +93,15 @@ class ControlAssignmentUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class BulkAssignmentCreate(BaseModel):
+    member_id: str
+    control_ids: List[str]
+    role: str = "owner"
+    due_date: Optional[datetime] = None
+    priority: str = "medium"
+    notes: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Helper utilities
 # ---------------------------------------------------------------------------
@@ -842,4 +851,326 @@ async def get_responsibility_matrix(
         "controls": rows,
         "total_controls": len(controls),
         "total_members": len(members),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Bulk assignment endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/assignments/bulk",
+    summary="Bulk-assign multiple controls to a team member",
+    status_code=201,
+)
+async def bulk_create_assignments(
+    payload: BulkAssignmentCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Assign a list of CMMC controls to a single team member in one call.
+
+    - Skips controls that are already assigned to this member in the same role.
+    - Returns counts of created, skipped, and invalid control IDs.
+    """
+    # Validate member
+    member_result = await db.execute(
+        select(TeamMember).where(TeamMember.id == payload.member_id)
+    )
+    if not member_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Team member '{payload.member_id}' not found.",
+        )
+
+    if payload.role not in VALID_ASSIGNMENT_ROLES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid role '{payload.role}'. Valid: {sorted(VALID_ASSIGNMENT_ROLES)}",
+        )
+    if payload.priority not in VALID_PRIORITIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid priority '{payload.priority}'. Valid: {sorted(VALID_PRIORITIES)}",
+        )
+
+    if not payload.control_ids:
+        raise HTTPException(status_code=422, detail="control_ids must not be empty.")
+
+    # Fetch all requested controls in one query
+    ctrl_result = await db.execute(
+        select(ControlRecord).where(ControlRecord.id.in_(payload.control_ids))
+    )
+    valid_controls = {c.id: c for c in ctrl_result.scalars().all()}
+    invalid_ids = [cid for cid in payload.control_ids if cid not in valid_controls]
+
+    # Fetch existing assignments for this member to avoid duplicates
+    existing_result = await db.execute(
+        select(ControlAssignment).where(
+            ControlAssignment.member_id == payload.member_id,
+            ControlAssignment.control_id.in_(payload.control_ids),
+            ControlAssignment.role == payload.role,
+        )
+    )
+    already_assigned = {a.control_id for a in existing_result.scalars().all()}
+
+    created = []
+    skipped = list(already_assigned)
+
+    for cid in payload.control_ids:
+        if cid not in valid_controls or cid in already_assigned:
+            continue
+        assignment = ControlAssignment(
+            id=str(uuid.uuid4()),
+            member_id=payload.member_id,
+            control_id=cid,
+            role=payload.role,
+            due_date=payload.due_date,
+            priority=payload.priority,
+            status="open",
+            notes=payload.notes,
+        )
+        db.add(assignment)
+        created.append(cid)
+
+    await db.commit()
+
+    return {
+        "member_id": payload.member_id,
+        "created": len(created),
+        "skipped_already_assigned": len(skipped),
+        "invalid_control_ids": invalid_ids,
+        "created_control_ids": created,
+    }
+
+
+@router.post(
+    "/assignments/domain/{domain}",
+    summary="Assign all controls in a CMMC domain to a team member",
+    status_code=201,
+)
+async def assign_domain_to_member(
+    domain: str,
+    member_id: str,
+    role: str = "owner",
+    priority: str = "medium",
+    due_date: Optional[datetime] = None,
+    notes: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Assign every control within a CMMC domain (e.g. "AC", "IA") to a team member.
+
+    - Useful for designating domain owners during initial compliance setup.
+    - Skips controls already assigned to the same member in the same role.
+    - Returns counts of created and skipped assignments.
+    """
+    # Validate member
+    member_result = await db.execute(
+        select(TeamMember).where(TeamMember.id == member_id)
+    )
+    if not member_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=404, detail=f"Team member '{member_id}' not found."
+        )
+
+    if role not in VALID_ASSIGNMENT_ROLES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid role '{role}'. Valid: {sorted(VALID_ASSIGNMENT_ROLES)}",
+        )
+    if priority not in VALID_PRIORITIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid priority '{priority}'. Valid: {sorted(VALID_PRIORITIES)}",
+        )
+
+    # Fetch all controls for the domain
+    ctrl_result = await db.execute(
+        select(ControlRecord).where(ControlRecord.domain == domain.upper())
+    )
+    domain_controls = ctrl_result.scalars().all()
+
+    if not domain_controls:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No controls found for domain '{domain}'. "
+                   f"Check that the domain code is valid (e.g. AC, IA, SC).",
+        )
+
+    control_ids = [c.id for c in domain_controls]
+
+    # Fetch existing assignments to avoid duplicates
+    existing_result = await db.execute(
+        select(ControlAssignment).where(
+            ControlAssignment.member_id == member_id,
+            ControlAssignment.control_id.in_(control_ids),
+            ControlAssignment.role == role,
+        )
+    )
+    already_assigned = {a.control_id for a in existing_result.scalars().all()}
+
+    created = []
+    for c in domain_controls:
+        if c.id in already_assigned:
+            continue
+        assignment = ControlAssignment(
+            id=str(uuid.uuid4()),
+            member_id=member_id,
+            control_id=c.id,
+            role=role,
+            due_date=due_date,
+            priority=priority,
+            status="open",
+            notes=notes,
+        )
+        db.add(assignment)
+        created.append(c.id)
+
+    await db.commit()
+
+    return {
+        "domain": domain.upper(),
+        "member_id": member_id,
+        "total_controls_in_domain": len(domain_controls),
+        "created": len(created),
+        "skipped_already_assigned": len(already_assigned),
+        "created_control_ids": created,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Workload analysis endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/workload", summary="Team workload and coverage analysis")
+async def get_team_workload(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Analyse workload distribution across the compliance team.
+
+    Returns:
+    - Per-member workload breakdown by priority and domain
+    - Coverage score (percentage of all controls that have at least one owner)
+    - Members with no assignments (unloaded)
+    - Controls with multiple owners (shared ownership)
+    - Top 10 most-assigned members (overload candidates)
+    """
+    controls_result = await db.execute(select(ControlRecord))
+    controls = controls_result.scalars().all()
+    controls_map = {c.id: c for c in controls}
+
+    members_result = await db.execute(
+        select(TeamMember).where(TeamMember.active == 1)
+    )
+    members = members_result.scalars().all()
+    members_map = {m.id: m for m in members}
+
+    asgn_result = await db.execute(select(ControlAssignment))
+    all_assignments = asgn_result.scalars().all()
+
+    assessments_map = await get_latest_assessments(db)
+
+    # ── Per-member workload ────────────────────────────────────────────────
+    member_workload: Dict[str, dict] = {}
+    for m in members:
+        member_workload[m.id] = {
+            "member_id": m.id,
+            "name": m.name,
+            "email": m.email,
+            "role": m.role,
+            "department": m.department,
+            "total_assigned": 0,
+            "by_priority": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+            "by_domain": {},
+            "by_status": {"open": 0, "in_progress": 0, "completed": 0, "overdue": 0},
+            "compliance_gap": 0,  # count of assigned controls not yet implemented
+        }
+
+    control_owner_count: Dict[str, int] = {}  # control_id → number of owners
+
+    for a in all_assignments:
+        mw = member_workload.get(a.member_id)
+        ctrl = controls_map.get(a.control_id)
+        if mw is None or ctrl is None:
+            continue
+
+        mw["total_assigned"] += 1
+
+        priority = a.priority if a.priority in mw["by_priority"] else "medium"
+        mw["by_priority"][priority] += 1
+
+        domain = ctrl.domain
+        mw["by_domain"][domain] = mw["by_domain"].get(domain, 0) + 1
+
+        effective_status = "overdue" if _assignment_overdue(a) else a.status
+        if effective_status in mw["by_status"]:
+            mw["by_status"][effective_status] += 1
+
+        # Count gap: control not fully implemented
+        ar = assessments_map.get(a.control_id)
+        if not ar or ar.status not in ("implemented", "na", "not_applicable"):
+            mw["compliance_gap"] += 1
+
+        # Track shared ownership
+        if a.role == "owner":
+            control_owner_count[a.control_id] = (
+                control_owner_count.get(a.control_id, 0) + 1
+            )
+
+    # ── Coverage analysis ─────────────────────────────────────────────────
+    owned_control_ids = {
+        a.control_id for a in all_assignments if a.role == "owner"
+    }
+    unowned_ids = [c.id for c in controls if c.id not in owned_control_ids]
+    coverage_pct = (
+        round(len(owned_control_ids) / len(controls) * 100, 1) if controls else 0.0
+    )
+
+    # Unowned by domain summary
+    unowned_by_domain: Dict[str, int] = {}
+    for cid in unowned_ids:
+        domain = controls_map[cid].domain
+        unowned_by_domain[domain] = unowned_by_domain.get(domain, 0) + 1
+
+    # Shared ownership (more than 1 owner)
+    shared_ownership = [
+        {
+            "control_id": cid,
+            "domain": controls_map[cid].domain,
+            "title": controls_map[cid].title,
+            "owner_count": count,
+        }
+        for cid, count in control_owner_count.items()
+        if count > 1
+    ]
+
+    # Members with zero assignments
+    unloaded = [
+        {"member_id": m.id, "name": m.name, "email": m.email, "role": m.role}
+        for m in members
+        if member_workload[m.id]["total_assigned"] == 0
+    ]
+
+    # Rank members by assignment count (descending) for overload detection
+    ranked = sorted(
+        member_workload.values(), key=lambda x: -x["total_assigned"]
+    )
+
+    return {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "coverage": {
+            "total_controls": len(controls),
+            "owned_controls": len(owned_control_ids),
+            "unowned_controls": len(unowned_ids),
+            "coverage_pct": coverage_pct,
+            "unowned_by_domain": unowned_by_domain,
+        },
+        "team_size": len(members),
+        "unloaded_members": unloaded,
+        "shared_ownership_controls": shared_ownership,
+        "member_workload": ranked,
     }

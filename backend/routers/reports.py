@@ -17,11 +17,24 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (AssessmentRecord, ControlRecord,
-                                 EvidenceRecord, get_db,
-                                 get_latest_assessments)
+from backend.db.database import (AssessmentRecord, ControlAssignment,
+                                 ControlRecord, EvidenceRecord, TeamMember,
+                                 get_db, get_latest_assessments)
 
 router = APIRouter()
+
+
+async def _get_control_owners(db: AsyncSession) -> dict[str, str]:
+    """Return a mapping of control_id → owner name(s) from ControlAssignment + TeamMember."""
+    result = await db.execute(
+        select(ControlAssignment, TeamMember)
+        .join(TeamMember, ControlAssignment.member_id == TeamMember.id)
+        .where(ControlAssignment.role == "owner", TeamMember.active == 1)
+    )
+    owners: dict[str, list[str]] = {}
+    for assignment, member in result.all():
+        owners.setdefault(assignment.control_id, []).append(member.name)
+    return {cid: ", ".join(names) for cid, names in owners.items()}
 
 
 def get_status_emoji(status: str) -> str:
@@ -67,6 +80,9 @@ async def generate_ssp(
     assessments = list(assessments_dict.values())
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
+
+    # Fetch team ownership for enrichment
+    control_owners = await _get_control_owners(db)
 
     # Count by status
     status_counts = {
@@ -168,6 +184,7 @@ async def generate_ssp(
         ssp += f"""### {a.control_id} - {ctrl_title}
 - **Status:** {status_display}
 - **Confidence:** {confidence_display}
+- **Control Owner:** {control_owners.get(a.control_id, 'Unassigned')}
 - **Notes:** {a.notes or 'None'}
 - **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}
 
@@ -200,6 +217,9 @@ async def generate_poam(
     assessments = list(assessments_dict.values())
     controls_result = await db.execute(select(ControlRecord))
     controls = {c.id: c for c in controls_result.scalars().all()}
+
+    # Look up team owners so POAM has real responsible-party names
+    control_owners = await _get_control_owners(db)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -238,7 +258,7 @@ async def generate_poam(
                     f"{a.confidence:.0%}",
                     f"Implement {a.control_id}",
                     a.next_review.strftime("%Y-%m-%d") if a.next_review else "TBD",
-                    a.assessor or "ISSO",
+                    control_owners.get(a.control_id) or a.assessor or "ISSO",
                     "TBD",
                     a.notes or "",
                 ]

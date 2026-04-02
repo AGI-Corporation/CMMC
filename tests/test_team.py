@@ -296,3 +296,202 @@ async def test_delete_assignment():
         del_resp = await ac.delete(f"/api/team/assignments/{assignment_id}")
         assert del_resp.status_code == 200
         assert del_resp.json()["status"] == "deleted"
+
+
+# ---------------------------------------------------------------------------
+# Tests for new endpoints: bulk assignment, domain assignment, workload
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_bulk_assignment():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # Create a fresh member for this test
+        member_resp = await ac.post(
+            "/api/team/members",
+            json={"name": "Bulk User", "email": "bulk@agi.example", "role": "Control Owner"},
+        )
+        member_id = member_resp.json()["id"]
+
+        resp = await ac.post(
+            "/api/team/assignments/bulk",
+            json={
+                "member_id": member_id,
+                "control_ids": ["AC.1.001", "AC.1.002", "IA.1.076"],
+                "role": "owner",
+                "priority": "high",
+            },
+        )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["created"] == 3
+    assert data["skipped_already_assigned"] == 0
+    assert data["invalid_control_ids"] == []
+    assert set(data["created_control_ids"]) == {"AC.1.001", "AC.1.002", "IA.1.076"}
+
+
+@pytest.mark.anyio
+async def test_bulk_assignment_skips_duplicates():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        member_resp = await ac.post(
+            "/api/team/members",
+            json={"name": "Bulk Dup", "email": "bulkdup@agi.example", "role": "Control Owner"},
+        )
+        member_id = member_resp.json()["id"]
+
+        # First bulk assign
+        await ac.post(
+            "/api/team/assignments/bulk",
+            json={"member_id": member_id, "control_ids": ["AC.1.001", "AC.1.002"], "role": "owner"},
+        )
+
+        # Second bulk assign with same controls — should skip
+        resp = await ac.post(
+            "/api/team/assignments/bulk",
+            json={"member_id": member_id, "control_ids": ["AC.1.001", "AC.1.002"], "role": "owner"},
+        )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["created"] == 0
+    assert data["skipped_already_assigned"] == 2
+
+
+@pytest.mark.anyio
+async def test_bulk_assignment_invalid_controls():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        member_resp = await ac.post(
+            "/api/team/members",
+            json={"name": "Bulk Bad", "email": "bulkbad@agi.example", "role": "Control Owner"},
+        )
+        member_id = member_resp.json()["id"]
+
+        resp = await ac.post(
+            "/api/team/assignments/bulk",
+            json={
+                "member_id": member_id,
+                "control_ids": ["AC.1.001", "FAKE.9.999"],
+                "role": "owner",
+            },
+        )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["created"] == 1
+    assert "FAKE.9.999" in data["invalid_control_ids"]
+
+
+@pytest.mark.anyio
+async def test_bulk_assignment_missing_member():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/api/team/assignments/bulk",
+            json={"member_id": "no-such-member", "control_ids": ["AC.1.001"], "role": "owner"},
+        )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_bulk_assignment_empty_list_returns_422():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        member_resp = await ac.post(
+            "/api/team/members",
+            json={"name": "Bulk Empty", "email": "bulkempty@agi.example", "role": "Other"},
+        )
+        member_id = member_resp.json()["id"]
+
+        resp = await ac.post(
+            "/api/team/assignments/bulk",
+            json={"member_id": member_id, "control_ids": [], "role": "owner"},
+        )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_domain_assignment():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        member_resp = await ac.post(
+            "/api/team/members",
+            json={"name": "Domain Owner", "email": "domain@agi.example", "role": "ISSO"},
+        )
+        member_id = member_resp.json()["id"]
+
+        resp = await ac.post(
+            f"/api/team/assignments/domain/AC",
+            params={"member_id": member_id, "role": "owner", "priority": "high"},
+        )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["domain"] == "AC"
+    assert data["member_id"] == member_id
+    assert data["total_controls_in_domain"] > 0
+    assert data["created"] > 0
+    assert data["created"] == data["total_controls_in_domain"] - data["skipped_already_assigned"]
+
+
+@pytest.mark.anyio
+async def test_domain_assignment_invalid_domain():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        member_resp = await ac.post(
+            "/api/team/members",
+            json={"name": "Domain Bad", "email": "domainbad@agi.example", "role": "Other"},
+        )
+        member_id = member_resp.json()["id"]
+
+        resp = await ac.post(
+            "/api/team/assignments/domain/ZZNOTREAL",
+            params={"member_id": member_id},
+        )
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_workload_endpoint():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/api/team/workload")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "coverage" in data
+    assert "member_workload" in data
+    assert "unloaded_members" in data
+    assert "shared_ownership_controls" in data
+
+    cov = data["coverage"]
+    assert "total_controls" in cov
+    assert "owned_controls" in cov
+    assert "unowned_controls" in cov
+    assert "coverage_pct" in cov
+    assert 0.0 <= cov["coverage_pct"] <= 100.0
+
+    # Each member workload entry should have expected fields
+    for mw in data["member_workload"]:
+        assert "member_id" in mw
+        assert "name" in mw
+        assert "total_assigned" in mw
+        assert "by_priority" in mw
+        assert "by_domain" in mw
+        assert "compliance_gap" in mw
+
+
+@pytest.mark.anyio
+async def test_poam_has_owner_column():
+    """POAM CSV should include real team owner names when assignments exist."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/api/reports/poam")
+    assert resp.status_code == 200
+    # Header row must still be present
+    assert "Control ID,Domain" in resp.text
+    assert "Responsible Party" in resp.text
+
+
+@pytest.mark.anyio
+async def test_ssp_has_control_owner():
+    """SSP Markdown should include 'Control Owner' for each assessment finding."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # Ensure at least one assessment exists so the findings section is non-empty
+        await ac.patch(
+            "/api/controls/AC.1.001",
+            json={"implementation_status": "partially_implemented", "notes": "SSP owner test"},
+        )
+        resp = await ac.get("/api/reports/ssp")
+    assert resp.status_code == 200
+    assert "# System Security Plan" in resp.text
+    assert "Control Owner" in resp.text
