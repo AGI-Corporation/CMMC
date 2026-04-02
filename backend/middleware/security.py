@@ -26,8 +26,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "max-age=31536000; includeSubDomains"
         )
 
-        # Content Security Policy - restrict where the site can be embedded
-        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        # Content Security Policy - restrict sources and framing
+        # default-src 'self' - restrict all fetches to same origin by default
+        # script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net - allow local scripts and Swagger UI assets
+        # style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net - allow local styles and Swagger UI assets
+        # frame-ancestors 'none' - prevent clickjacking
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "frame-ancestors 'none'"
+        )
 
         # Referrer Policy - only send referrer for same-origin requests
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
