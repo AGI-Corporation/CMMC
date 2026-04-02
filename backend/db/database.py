@@ -94,6 +94,44 @@ class AgentRunRecord(Base):
     completed_at = Column(DateTime)
 
 
+class TeamMember(Base):
+    __tablename__ = "team_members"
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    role = Column(String, nullable=False)  # ISSO, ISSM, System Owner, Control Owner, Assessor, etc.
+    department = Column(String)
+    phone = Column(String)
+    active = Column(Integer, default=1)  # 1=active, 0=inactive
+    notes = Column(Text)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class ControlAssignment(Base):
+    __tablename__ = "control_assignments"
+    id = Column(String, primary_key=True, index=True)
+    member_id = Column(String, index=True, nullable=False)  # FK → team_members.id
+    control_id = Column(String, index=True, nullable=False)  # FK → controls.id
+    role = Column(String, default="owner")  # owner / reviewer / approver
+    due_date = Column(DateTime)
+    completion_date = Column(DateTime)
+    priority = Column(String, default="medium")  # critical / high / medium / low
+    status = Column(String, default="open")  # open / in_progress / completed / overdue
+    notes = Column(Text)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("idx_assignment_member", "member_id"),
+        Index("idx_assignment_control", "control_id"),
+    )
+
+
 async def init_db():
     """Create all tables on startup."""
     async with engine.begin() as conn:
