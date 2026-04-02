@@ -22,7 +22,8 @@ async def test_security_headers():
         response.headers["Strict-Transport-Security"]
         == "max-age=31536000; includeSubDomains"
     )
-    assert response.headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+    assert "default-src 'self'" in response.headers["Content-Security-Policy"]
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
 
 
@@ -41,5 +42,6 @@ async def test_security_headers_root():
         response.headers["Strict-Transport-Security"]
         == "max-age=31536000; includeSubDomains"
     )
-    assert response.headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+    assert "default-src 'self'" in response.headers["Content-Security-Policy"]
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
