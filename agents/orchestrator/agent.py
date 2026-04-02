@@ -32,6 +32,7 @@ class AgentType(str, Enum):
     GOVERNANCE = "governance"  # Policy/risk/POA&M
     OPS = "operations"  # IR/SIEM/SOAR
     MISTRAL = "mistral"  # AI analysis engine
+    AWARENESS = "awareness"  # Awareness & Training / Personnel Security
 
 
 class TaskTrigger(str, Enum):
@@ -288,6 +289,37 @@ class ComplianceOrchestrator:
 router = APIRouter()
 _orchestrator = ComplianceOrchestrator()
 
+# ---------------------------------------------------------------------------
+# STANDARD_RESULT_AGENTS: agents whose run_full_assessment() result lists
+# can be directly promoted to official AssessmentRecords
+# ---------------------------------------------------------------------------
+
+STANDARD_RESULT_AGENTS = {AgentType.GOVERNANCE, AgentType.AWARENESS, AgentType.ICAM}
+
+
+async def _run_governance(db: AsyncSession, trigger: str) -> List[Dict]:
+    """Import lazily to avoid circular at module load time."""
+    from agents.governance_agent.agent import GovernanceAgent
+    return await GovernanceAgent().run_full_assessment(db, trigger)
+
+
+async def _run_awareness(db: AsyncSession, trigger: str) -> List[Dict]:
+    from agents.awareness_agent.agent import AwarenessAgent
+    return await AwarenessAgent().run_full_assessment(db, trigger)
+
+
+async def _run_icam(db: AsyncSession, trigger: str) -> List[Dict]:
+    from agents.icam_agent.agent import ICAMAgent
+    return await ICAMAgent().run_full_assessment(db, trigger)
+
+
+# Map AgentType → runner function for ASSESSMENT and SCHEDULE triggers
+_AGENT_RUNNERS = {
+    AgentType.GOVERNANCE: _run_governance,
+    AgentType.AWARENESS: _run_awareness,
+    AgentType.ICAM: _run_icam,
+}
+
 
 @router.post("/task", summary="Create and route a compliance task")
 async def create_task(trigger: str, scope: str, controls: str = ""):
@@ -302,6 +334,41 @@ async def create_task(trigger: str, scope: str, controls: str = ""):
         "assigned_agents": task.assigned_agents,
         "required_controls": task.required_controls,
         "status": task.status,
+    }
+
+
+@router.post("/execute", summary="Execute all agents for an ASSESSMENT or SCHEDULE trigger")
+async def execute_task(
+    trigger: str = "assessment",
+    scope: str = "enterprise",
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Execute a full compliance assessment by running all standard result agents.
+    Returns aggregated results from all agents.
+    """
+    all_results: List[Dict] = []
+    executed_agents: List[str] = []
+
+    for agent_type, runner in _AGENT_RUNNERS.items():
+        try:
+            results = await runner(db, trigger)
+            all_results.extend(results)
+            executed_agents.append(agent_type.value)
+        except Exception as exc:
+            # Log the full exception for operators; expose only a safe tag to callers
+            import logging
+            logging.getLogger(__name__).error(
+                "Agent %s failed during execute: %s", agent_type.value, exc, exc_info=True
+            )
+            executed_agents.append(f"{agent_type.value}:FAILED")
+
+    return {
+        "trigger": trigger,
+        "scope": scope,
+        "agents_executed": executed_agents,
+        "total_controls_assessed": len(all_results),
+        "results": all_results,
     }
 
 

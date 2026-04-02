@@ -17,11 +17,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi_mcp import FastApiMCP
 
 from agents.devsecops_agent import agent as devsecops
+from agents.governance_agent import agent as governance
+from agents.awareness_agent import agent as awareness
 from agents.icam_agent import agent as icam
 from agents.mistral_agent import agent as mistral
 from agents.orchestrator import agent as orchestrator
 from backend.db.database import init_db
 from backend.middleware.security import SecurityHeadersMiddleware
+from backend.middleware.rate_limit import RateLimitMiddleware
 from backend.routers import assessment, controls, evidence, reports, team
 
 load_dotenv()
@@ -63,6 +66,8 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+# Add Rate Limiting Middleware
+app.add_middleware(RateLimitMiddleware)
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
@@ -82,6 +87,12 @@ app.include_router(
     devsecops.router, prefix="/api/agents/devsecops", tags=["DevSecOps Agent"]
 )
 app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
+app.include_router(
+    governance.router, prefix="/api/agents/governance", tags=["Governance Agent"]
+)
+app.include_router(
+    awareness.router, prefix="/api/agents/awareness", tags=["Awareness Agent"]
+)
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────

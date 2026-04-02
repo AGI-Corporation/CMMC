@@ -132,6 +132,21 @@ class ControlAssignment(Base):
     )
 
 
+class BlockchainTransaction(Base):
+    """Tamper-evident audit ledger for CMMC assessment events."""
+
+    __tablename__ = "blockchain_transactions"
+    id = Column(String, primary_key=True, index=True)
+    sequence = Column(Integer, unique=True, nullable=False, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    payload = Column(Text, nullable=False)        # JSON string
+    payload_hash = Column(String, nullable=False)  # SHA-256 of payload
+    previous_hash = Column(String, nullable=False)  # SHA-256 of prior TX
+    signature = Column(String, nullable=False)    # HMAC-SHA256
+    actor = Column(String, default="system")
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+
 async def init_db():
     """Create all tables on startup."""
     async with engine.begin() as conn:

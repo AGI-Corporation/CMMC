@@ -333,5 +333,133 @@ async def get_dashboard(
             {"name": "icam", "endpoint": "/api/agents/icam"},
             {"name": "devsecops", "endpoint": "/api/agents/devsecops"},
             {"name": "mistral", "endpoint": "/api/agents/mistral"},
+            {"name": "governance", "endpoint": "/api/agents/governance"},
+            {"name": "awareness", "endpoint": "/api/agents/awareness"},
         ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Maturity Heatmap: ZT Pillar × CMMC Domain cross-matrix
+# ---------------------------------------------------------------------------
+
+# DoD ZT Pillar → CMMC domain mapping (User pillar now includes AT domain)
+_ZT_PILLAR_DOMAINS: Dict[str, List[str]] = {
+    "User": ["AC", "IA", "PS", "AT"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA", "SA"],
+}
+
+
+@router.get("/maturity-heatmap", summary="ZT pillar × CMMC domain maturity heatmap")
+async def get_maturity_heatmap(db: AsyncSession = Depends(get_db)):
+    """
+    Return a Zero Trust pillar × CMMC domain cross-matrix showing maturity scores.
+
+    Response structure:
+    - `pillar_rollup`: Per-pillar aggregate maturity score (sorted ascending — lowest first).
+    - `matrix`:        Per (pillar, domain) cell with control counts and maturity %.
+    """
+    ctrl_result = await db.execute(select(ControlRecord))
+    controls = ctrl_result.scalars().all()
+    assessments_map = await get_latest_assessments(db)
+
+    # Build per-domain stats
+    domain_stats: Dict[str, dict] = {}
+    for c in controls:
+        d = c.domain
+        if d not in domain_stats:
+            domain_stats[d] = {
+                "total": 0, "implemented": 0, "partial": 0,
+                "confidence_sum": 0.0, "assessed": 0,
+            }
+        domain_stats[d]["total"] += 1
+        ar = assessments_map.get(c.id)
+        if ar:
+            domain_stats[d]["assessed"] += 1
+            domain_stats[d]["confidence_sum"] += ar.confidence
+            if ar.status == "implemented":
+                domain_stats[d]["implemented"] += 1
+            elif ar.status in ("partially_implemented", "partial"):
+                domain_stats[d]["partial"] += 1
+
+    def _maturity(row: dict) -> float:
+        t = row["total"]
+        if t == 0:
+            return 0.0
+        return round((row["implemented"] + 0.5 * row["partial"]) / t * 100, 1)
+
+    def _avg_confidence(row: dict) -> float:
+        if row["assessed"] == 0:
+            return 0.0
+        return round(row["confidence_sum"] / row["assessed"], 2)
+
+    # Build matrix (pillar → domain → cell)
+    matrix: List[dict] = []
+    pillar_rollup: List[dict] = []
+
+    for pillar, domains in _ZT_PILLAR_DOMAINS.items():
+        cells = []
+        pillar_total = pillar_impl = pillar_partial = pillar_assessed = 0
+        pillar_conf_sum = 0.0
+
+        for domain in domains:
+            row = domain_stats.get(domain)
+            if row is None:
+                cell = {
+                    "pillar": pillar,
+                    "domain": domain,
+                    "total_controls": 0,
+                    "implemented": 0,
+                    "partial": 0,
+                    "maturity_score": 0.0,
+                    "avg_confidence": 0.0,
+                }
+            else:
+                cell = {
+                    "pillar": pillar,
+                    "domain": domain,
+                    "total_controls": row["total"],
+                    "implemented": row["implemented"],
+                    "partial": row["partial"],
+                    "maturity_score": _maturity(row),
+                    "avg_confidence": _avg_confidence(row),
+                }
+                pillar_total += row["total"]
+                pillar_impl += row["implemented"]
+                pillar_partial += row["partial"]
+                pillar_assessed += row["assessed"]
+                pillar_conf_sum += row["confidence_sum"]
+            cells.append(cell)
+            matrix.append(cell)
+
+        pillar_maturity = (
+            round((pillar_impl + 0.5 * pillar_partial) / pillar_total * 100, 1)
+            if pillar_total > 0 else 0.0
+        )
+        pillar_conf = (
+            round(pillar_conf_sum / pillar_assessed, 2)
+            if pillar_assessed > 0 else 0.0
+        )
+        pillar_rollup.append({
+            "pillar": pillar,
+            "domains": domains,
+            "total_controls": pillar_total,
+            "implemented": pillar_impl,
+            "partial": pillar_partial,
+            "maturity_score": pillar_maturity,
+            "avg_confidence": pillar_conf,
+        })
+
+    # Sort pillar_rollup by maturity_score ascending (weakest first)
+    pillar_rollup.sort(key=lambda x: x["maturity_score"])
+
+    return {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "pillar_rollup": pillar_rollup,
+        "matrix": matrix,
     }
