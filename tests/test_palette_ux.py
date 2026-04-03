@@ -68,6 +68,19 @@ async def test_ssp_ux_elements():
         assert "✅" in content
         assert "🟡" in content
 
+        # Check for Zero Trust Pillar Alignment
+        assert "Zero Trust Pillar Alignment" in content
+        assert "User" in content
+        assert "Device" in content
+        assert "Network" in content
+        assert "Application" in content
+        assert "Data" in content
+        assert "Visibility & Analytics" in content
+        assert "Automation & Orchestration" in content
+
+        # Check for navigation links
+        assert "[Back to Table of Contents](#table-of-contents)" in content
+
         # Check for confidence stars
         # 1.0 confidence should have 5 stars: ⭐⭐⭐⭐⭐
         assert "⭐⭐⭐⭐⭐" in content
