@@ -23,6 +23,17 @@ from backend.db.database import (AssessmentRecord, ControlRecord,
 
 router = APIRouter()
 
+# Mapping CMMC domains to Zero Trust Pillars
+ZT_PILLAR_DOMAINS = {
+    "User": ["AC", "IA", "PS"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA"],
+}
+
 
 def get_status_emoji(status: str) -> str:
     """Map implementation status to a visual emoji for better scannability."""
@@ -31,7 +42,7 @@ def get_status_emoji(status: str) -> str:
         "partial": "🟡",
         "partially_implemented": "🟡",
         "planned": "📝",
-        "not_implemented": "🛑",
+        "not_implemented": "🚫",
         "na": "⚪",
         "not_started": "⚪",
     }
@@ -102,7 +113,26 @@ async def generate_ssp(
     )
     progress_bar = get_progress_bar(compliance_pct)
 
+    # Calculate ZT Pillar Progress
+    zt_pillar_stats = {}
+    for pillar, domains in ZT_PILLAR_DOMAINS.items():
+        pillar_controls = [c for c in controls.values() if c.domain in domains]
+        if not pillar_controls:
+            zt_pillar_stats[pillar] = 0.0
+            continue
+
+        pillar_control_ids = [c.id for c in pillar_controls]
+        pillar_assessments = [
+            a for a in assessments if a.control_id in pillar_control_ids
+        ]
+
+        implemented_count = sum(
+            1 for a in pillar_assessments if a.status == "implemented"
+        )
+        zt_pillar_stats[pillar] = (implemented_count / len(pillar_controls)) * 100
+
     ssp = f"""# System Security Plan (SSP)
+<a name="table-of-contents"></a>
 ## {system_name}
 
 **Classification:** {classification}  
@@ -136,19 +166,23 @@ async def generate_ssp(
 | Not Implemented | {get_status_emoji('not_implemented')} {status_counts['not_implemented']} |
 | N/A | {get_status_emoji('na')} {status_counts['na']} |
 
+[Back to Table of Contents](#table-of-contents)
+
 ## 2. Control Implementation Summary
 
 ### Zero Trust Pillar Alignment
 
-| ZT Pillar | CMMC Domains | Status |
-|-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
+| ZT Pillar | CMMC Domains | Implementation Progress |
+|-----------|--------------|-------------------------|
+| User | AC, IA, PS | {get_progress_bar(zt_pillar_stats['User'])} |
+| Device | CM, MA, PE | {get_progress_bar(zt_pillar_stats['Device'])} |
+| Network | SC, AC | {get_progress_bar(zt_pillar_stats['Network'])} |
+| Application | CM, CA, SI | {get_progress_bar(zt_pillar_stats['Application'])} |
+| Data | MP, SC, AU | {get_progress_bar(zt_pillar_stats['Data'])} |
+| Visibility & Analytics | AU, IR, RA | {get_progress_bar(zt_pillar_stats['Visibility & Analytics'])} |
+| Automation & Orchestration | IR, SI, CA | {get_progress_bar(zt_pillar_stats['Automation & Orchestration'])} |
+
+[Back to Table of Contents](#table-of-contents)
 
 ## 3. Assessment Findings
 
@@ -174,6 +208,8 @@ async def generate_ssp(
 """
 
     ssp += """
+[Back to Table of Contents](#table-of-contents)
+
 ## 4. Next Steps
 
 1. Complete POA&M for all not_implemented controls
@@ -300,13 +336,7 @@ async def get_dashboard(
             round(implemented / total_controls * 100, 1) if total_controls else 0
         ),
         "zt_pillars": [
-            {"pillar": "User", "domains": ["AC", "IA", "PS"]},
-            {"pillar": "Device", "domains": ["CM", "MA", "PE"]},
-            {"pillar": "Network", "domains": ["SC", "AC"]},
-            {"pillar": "Application", "domains": ["CM", "CA", "SI"]},
-            {"pillar": "Data", "domains": ["MP", "SC", "AU"]},
-            {"pillar": "Visibility & Analytics", "domains": ["AU", "IR", "RA"]},
-            {"pillar": "Automation & Orchestration", "domains": ["IR", "SI", "CA"]},
+            {"pillar": p, "domains": d} for p, d in ZT_PILLAR_DOMAINS.items()
         ],
         "agents": [
             {"name": "orchestrator", "endpoint": "/api/orchestrator"},
