@@ -224,11 +224,13 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
     if run.agent_type == "icam":
         results = findings.get("results", [])
         for res in results:
+            # Clamp confidence to 0.0-1.0
+            confidence = max(0.0, min(1.0, res.get("confidence", 0.0)))
             new_ass = AssessmentRecord(
                 id=str(uuid.uuid4()),
                 control_id=res["control_id"],
                 status=res["status"],
-                confidence=res["confidence"],
+                confidence=confidence,
                 notes=f"Promoted from {run.agent_type} agent run {run_id}. Findings: {', '.join(res['findings'])}",
                 evidence_ids=[res["evidence_id"]],
                 assessor=f"Agent: {run.agent_type}",
@@ -248,7 +250,7 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
         # DSO provides overall confidence and detailed scan results
         # We'll map to specific controls it evaluated
         controls = run.controls_evaluated
-        overall_conf = findings.get("overall_confidence", 0.0)
+        overall_conf = max(0.0, min(1.0, findings.get("overall_confidence", 0.0)))
         status = findings.get("status", "partially_implemented")
 
         for cid in controls:
