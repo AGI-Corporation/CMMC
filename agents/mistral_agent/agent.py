@@ -8,6 +8,7 @@ implementation evidence, and produce POAM recommendations.
 """
 
 import json
+import logging
 import os
 import uuid
 from datetime import UTC, datetime
@@ -25,6 +26,8 @@ MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
 MISTRAL_CODE_MODEL = os.getenv("MISTRAL_CODE_MODEL", "codestral-latest")
 MISTRAL_LOCAL_MODEL = os.getenv("MISTRAL_LOCAL_MODEL", "mistral")
 USE_LOCAL = os.getenv("USE_LOCAL_MODEL", "false").lower() == "true"
+
+logger = logging.getLogger(__name__)
 
 
 class MistralComplianceAgent:
@@ -318,7 +321,8 @@ async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_d
             "model": MISTRAL_MODEL,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error in gap-analysis: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/code-review", summary="DevSecOps code security analysis with Codestral")
@@ -333,7 +337,8 @@ async def code_review(req: CodeReviewRequest, db: AsyncSession = Depends(get_db)
         )
         return {"analysis": result, "model": MISTRAL_CODE_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error in code-review: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/ask", summary="Ask a CMMC/ZT compliance question")
@@ -343,4 +348,5 @@ async def ask_question(req: QuestionRequest):
         answer = await agent.answer_compliance_question(req.question, req.context)
         return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error in ask-question: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

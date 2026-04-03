@@ -22,7 +22,11 @@ async def test_security_headers():
         response.headers["Strict-Transport-Security"]
         == "max-age=31536000; includeSubDomains"
     )
-    assert response.headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+    csp = response.headers["Content-Security-Policy"]
+    assert "default-src 'self'" in csp
+    assert "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net" in csp
+    assert "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net" in csp
+    assert "frame-ancestors 'none'" in csp
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
 
 
@@ -41,5 +45,9 @@ async def test_security_headers_root():
         response.headers["Strict-Transport-Security"]
         == "max-age=31536000; includeSubDomains"
     )
-    assert response.headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+    csp = response.headers["Content-Security-Policy"]
+    assert "default-src 'self'" in csp
+    assert "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net" in csp
+    assert "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net" in csp
+    assert "frame-ancestors 'none'" in csp
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
