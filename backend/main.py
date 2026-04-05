@@ -21,6 +21,7 @@ from agents.icam_agent import agent as icam
 from agents.mistral_agent import agent as mistral
 from agents.orchestrator import agent as orchestrator
 from backend.db.database import init_db
+from backend.middleware.mcp_auth import MCPAuthMiddleware
 from backend.middleware.security import SecurityHeadersMiddleware
 from backend.routers import assessment, controls, evidence, reports
 
@@ -63,6 +64,9 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Guard /mcp with Bearer token authentication (CMMC IA.1.076, IA.1.077)
+app.add_middleware(MCPAuthMiddleware)
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 

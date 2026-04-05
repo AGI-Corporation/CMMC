@@ -131,6 +131,68 @@ class ICAMAgent:
             ),
         ]
 
+    def check_mcp_api_auth(self) -> ICAMAssessmentResult:
+        """
+        Assess IA.1.076 / IA.1.077 - MCP endpoint Bearer token authentication.
+
+        The MCP server (/mcp) must require callers to present a valid Bearer
+        token.  Unauthorized requests MUST receive the JSON-RPC 2.0 error:
+
+            {"jsonrpc":"2.0","error":{"code":-32001,
+             "message":"Unauthorized \u2014 Bearer token required"},"id":null}
+
+        This error payload is the compliance reference artifact that confirms
+        the control is enforced at the protocol boundary.
+
+        References:
+          CMMC IA.1.076 — Identify information system users/processes/devices
+          CMMC IA.1.077 — Authenticate identities before allowing access
+          NIST SP 800-171 Rev 2 — 3.5.1, 3.5.2
+          ZT Pillar: User / Visibility & Analytics
+        """
+        import os
+
+        mcp_key_configured = bool(os.getenv("MCP_API_KEY", ""))
+
+        findings: list = []
+        remediation: list = []
+
+        if not mcp_key_configured:
+            findings.append(
+                "MCP_API_KEY environment variable is not set — the /mcp endpoint "
+                "is unauthenticated. Unauthorized callers will not receive the "
+                'required JSON-RPC error {"jsonrpc":"2.0","error":{"code":-32001,'
+                '"message":"Unauthorized \u2014 Bearer token required"},"id":null}.'
+            )
+            remediation.append(
+                "Set MCP_API_KEY in the runtime environment to enforce Bearer token "
+                "authentication on the /mcp endpoint (MCPAuthMiddleware)."
+            )
+            remediation.append(
+                "Document the JSON-RPC -32001 Unauthorized response as an evidence "
+                "artifact for IA.1.077 in the SSP."
+            )
+            status = "not_implemented"
+            confidence = 0.0
+        else:
+            findings.append(
+                "MCP_API_KEY is configured — MCPAuthMiddleware enforces Bearer token "
+                "authentication on /mcp. Unauthorized callers receive: "
+                '{"jsonrpc":"2.0","error":{"code":-32001,'
+                '"message":"Unauthorized \u2014 Bearer token required"},"id":null}.'
+            )
+            status = "implemented"
+            confidence = 1.0
+
+        return ICAMAssessmentResult(
+            control_id="IA.1.077",
+            status=status,
+            confidence=confidence,
+            findings=findings,
+            evidence_id=str(uuid.uuid4()),
+            remediation=remediation,
+        )
+
     def check_mfa_coverage(self) -> ICAMAssessmentResult:
         """Assess IA.3.083 - MFA coverage for all access types."""
         total = len(self.users)
@@ -223,6 +285,7 @@ class ICAMAgent:
         assessments = [
             self.check_mfa_coverage(),
             self.check_least_privilege(),
+            self.check_mcp_api_auth(),
         ]
         results = []
         for a in assessments:
