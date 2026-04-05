@@ -68,8 +68,35 @@ async def test_ssp_ux_elements():
         assert "✅" in content
         assert "🟡" in content
 
+        # Check for Zero Trust Pillar Alignment dynamic content
+        assert "### Zero Trust Pillar Alignment" in content
+        assert "User" in content
+        assert "Device" in content
+        assert "Network" in content
+
         # Check for confidence stars
         # 1.0 confidence should have 5 stars: ⭐⭐⭐⭐⭐
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+
+@pytest.mark.anyio
+async def test_dashboard_consistency():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/dashboard")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert "zt_pillars" in data
+        pillars = [p["pillar"] for p in data["zt_pillars"]]
+        assert "User" in pillars
+        assert "Device" in pillars
+        assert "Automation & Orchestration" in pillars
+
+        # Verify domains for a pillar
+        user_pillar = next(p for p in data["zt_pillars"] if p["pillar"] == "User")
+        assert "AC" in user_pillar["domains"]
+        assert "IA" in user_pillar["domains"]
