@@ -17,6 +17,7 @@ allows all requests (development mode) and logs a warning.
 
 import json
 import os
+import secrets
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -80,8 +81,8 @@ class MCPAuthMiddleware(BaseHTTPMiddleware):
         if not auth_header.startswith("Bearer "):
             return _unauthorized_response()
 
-        token = auth_header[len("Bearer "):]
-        if token != _MCP_API_KEY:
+        token = auth_header[len("Bearer "):].strip()
+        if not secrets.compare_digest(token, _MCP_API_KEY):
             return _unauthorized_response()
 
         return await call_next(request)
