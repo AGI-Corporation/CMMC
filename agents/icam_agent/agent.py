@@ -30,6 +30,8 @@ ICAM_CONTROLS = [
     "AC.2.013",
     "AC.2.015",
     "AC.2.016",
+    "AC.3.017",
+    "AC.3.018",
     "IA.1.076",
     "IA.1.077",
     "IA.2.078",
@@ -216,6 +218,98 @@ class ICAMAgent:
             remediation=remediation,
         )
 
+    def check_separation_of_duties(self) -> ICAMAssessmentResult:
+        """Assess AC.3.017 - Separation of duties."""
+        # Check if any user holds conflicting roles (admin + auditor, developer + approver)
+        conflicting_role_pairs = [
+            {"SystemAdmin", "Auditor"},
+            {"Developer", "Approver"},
+            {"CUI_Handler", "SystemAdmin"},
+        ]
+        violations = []
+        for u in self.users:
+            role_set = set(u.roles)
+            for pair in conflicting_role_pairs:
+                if pair.issubset(role_set):
+                    violations.append(
+                        f"{u.username} holds conflicting roles: {pair}"
+                    )
+
+        findings = violations or ["No conflicting role combinations detected"]
+        remediation = (
+            ["Separate conflicting role assignments; implement role-based access controls"]
+            if violations
+            else []
+        )
+        confidence = 1.0 - min(1.0, len(violations) / max(len(self.users), 1))
+        status = (
+            "implemented"
+            if confidence >= 0.9
+            else ("partially_implemented" if confidence >= 0.5 else "not_implemented")
+        )
+        return ICAMAssessmentResult(
+            control_id="AC.3.017",
+            status=status,
+            confidence=round(confidence, 2),
+            findings=findings,
+            evidence_id=str(uuid.uuid4()),
+            remediation=remediation,
+        )
+
+    def check_privilege_escalation_prevention(self) -> ICAMAssessmentResult:
+        """Assess AC.3.018 - Prevent non-privileged users from executing privileged functions."""
+        # Check service accounts with privileged flag but no MFA (high-risk gap)
+        risky_svc_accounts = [
+            u
+            for u in self.users
+            if "ServiceAccount" in u.roles and u.privileged and not u.mfa_enabled
+        ]
+        non_privileged_with_admin_roles = [
+            u
+            for u in self.users
+            if not u.privileged and any(
+                r in u.roles for r in ["SystemAdmin", "CUI_Handler"]
+            )
+        ]
+
+        findings = []
+        remediation = []
+        if risky_svc_accounts:
+            findings.append(
+                f"{len(risky_svc_accounts)} privileged service accounts lack MFA or audit logging"
+            )
+            remediation.append(
+                "Enforce audit logging for all privileged function executions"
+            )
+        if non_privileged_with_admin_roles:
+            findings.append(
+                f"{len(non_privileged_with_admin_roles)} non-privileged accounts hold admin roles"
+            )
+            remediation.append(
+                "Review and remediate role assignments to prevent unauthorized privilege escalation"
+            )
+        if not findings:
+            findings.append("Privileged function execution controls appear adequate")
+
+        confidence = max(
+            0.0,
+            1.0 - (len(risky_svc_accounts) + len(non_privileged_with_admin_roles))
+            / max(len(self.users), 1),
+        )
+        status = (
+            "implemented"
+            if confidence >= 0.9
+            else ("partially_implemented" if confidence >= 0.5 else "not_implemented")
+        )
+        return ICAMAssessmentResult(
+            control_id="AC.3.018",
+            status=status,
+            confidence=round(confidence, 2),
+            findings=findings,
+            evidence_id=str(uuid.uuid4()),
+            remediation=remediation,
+        )
+
     async def run_full_assessment(
         self, db: AsyncSession, trigger: str = "manual"
     ) -> List[Dict[str, Any]]:
@@ -223,6 +317,8 @@ class ICAMAgent:
         assessments = [
             self.check_mfa_coverage(),
             self.check_least_privilege(),
+            self.check_separation_of_duties(),
+            self.check_privilege_escalation_prevention(),
         ]
         results = []
         for a in assessments:

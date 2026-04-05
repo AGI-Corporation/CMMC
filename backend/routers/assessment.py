@@ -270,6 +270,29 @@ async def promote_agent_run(run_id: str, db: AsyncSession = Depends(get_db)):
             db.add(new_ass)
             promoted_count += 1
 
+    # Generic promotion for governance, awareness, and other standard-result agents
+    elif run.agent_type in ("governance", "awareness"):
+        results = findings.get("results", [])
+        for res in results:
+            new_ass = AssessmentRecord(
+                id=str(uuid.uuid4()),
+                control_id=res["control_id"],
+                status=res["status"],
+                confidence=res["confidence"],
+                notes=f"Promoted from {run.agent_type} agent run {run_id}. Findings: {', '.join(res['findings'])}",
+                evidence_ids=[res["evidence_id"]],
+                assessor=f"Agent: {run.agent_type}",
+                assessment_date=datetime.now(UTC),
+                poam_required=(
+                    "true"
+                    if res["status"]
+                    in ["partial", "not_implemented", "partially_implemented"]
+                    else "false"
+                ),
+            )
+            db.add(new_ass)
+            promoted_count += 1
+
     await db.commit()
     return {
         "status": "promoted",

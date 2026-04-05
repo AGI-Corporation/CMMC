@@ -17,6 +17,7 @@ class CMMCLevel(str, Enum):
 
 class ControlDomain(str, Enum):
     AC = "AC"  # Access Control
+    AT = "AT"  # Awareness and Training
     AU = "AU"  # Audit and Accountability
     CM = "CM"  # Configuration Management
     IA = "IA"  # Identification and Authentication

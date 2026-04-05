@@ -16,7 +16,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_mcp import FastApiMCP
 
+from agents.awareness_agent import agent as awareness
 from agents.devsecops_agent import agent as devsecops
+from agents.governance_agent import agent as governance
 from agents.icam_agent import agent as icam
 from agents.mistral_agent import agent as mistral
 from agents.orchestrator import agent as orchestrator
@@ -81,6 +83,12 @@ app.include_router(
     devsecops.router, prefix="/api/agents/devsecops", tags=["DevSecOps Agent"]
 )
 app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
+app.include_router(
+    governance.router, prefix="/api/agents/governance", tags=["Governance Agent"]
+)
+app.include_router(
+    awareness.router, prefix="/api/agents/awareness", tags=["Awareness Agent"]
+)
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────

@@ -32,6 +32,7 @@ class AgentType(str, Enum):
     GOVERNANCE = "governance"  # Policy/risk/POA&M
     OPS = "operations"  # IR/SIEM/SOAR
     MISTRAL = "mistral"  # AI analysis engine
+    AWARENESS = "awareness"  # Awareness & Training
 
 
 class TaskTrigger(str, Enum):
@@ -81,13 +82,13 @@ class ComplianceOrchestrator:
 
     # ZT Pillar -> CMMC domains mapping (DoD ZT Strategy alignment)
     ZT_DOMAIN_MAP = {
-        "User": ["AC", "IA", "PS"],
+        "User": ["AC", "IA", "PS", "AT"],
         "Device": ["CM", "MA", "PE"],
         "Network": ["SC", "AC"],
         "Application": ["CM", "CA", "SI"],
         "Data": ["MP", "SC", "AU"],
         "Visibility & Analytics": ["AU", "IR", "RA"],
-        "Automation & Orchestration": ["IR", "SI", "CA"],
+        "Automation & Orchestration": ["IR", "SI", "CA", "SA"],
     }
 
     # SPRS point deductions per control (from DoD assessment methodology)
@@ -151,6 +152,14 @@ class ComplianceOrchestrator:
             task.required_controls = task.required_controls or ["IR.2.092", "AU.2.041"]
         elif trigger == TaskTrigger.ASSESSMENT:
             task.assigned_agents = list(AgentType)
+        elif trigger == TaskTrigger.SCHEDULE:
+            task.assigned_agents = [
+                AgentType.GOVERNANCE,
+                AgentType.AWARENESS,
+                AgentType.ICAM,
+                AgentType.DEVSECOPS,
+                AgentType.MISTRAL,
+            ]
         else:
             task.assigned_agents = [AgentType.GOVERNANCE, AgentType.MISTRAL]
 
