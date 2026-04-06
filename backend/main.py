@@ -8,12 +8,14 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
 
 from agents.devsecops_agent import agent as devsecops
@@ -100,6 +102,29 @@ async def root():
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "ok"}
+
+
+@app.get("/error-test", tags=["Health"])
+async def error_test():
+    raise Exception("Test exception for global handler")
+
+
+# ─── Global Exception Handler ──────────────────────────────────────────────────
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catch all unhandled exceptions and return a safe, generic JSON response.
+    Logs the actual error for administrators.
+    """
+    logging.error(
+        f"Unhandled exception at {request.url.path}: {str(exc)}", exc_info=True
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 
 # ─── MCP Integration ──────────────────────────────────────────────────────────
