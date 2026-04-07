@@ -8,12 +8,14 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
 
 from agents.devsecops_agent import agent as devsecops
@@ -66,6 +68,26 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler to prevent internal detail leakage.
+    Logs the full exception but returns a generic 500 error.
+    """
+    logger.exception(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
+
 # Core Routers
 app.include_router(controls.router, prefix="/api/controls", tags=["Controls"])
 app.include_router(assessment.router, prefix="/api/assessment", tags=["Assessment"])
@@ -100,6 +122,12 @@ async def root():
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "ok"}
+
+
+@app.get("/error-test", tags=["Health"])
+async def error_test():
+    """Endpoint to test the global exception handler."""
+    raise Exception("This is a test exception with sensitive data: SECRET_KEY_123")
 
 
 # ─── MCP Integration ──────────────────────────────────────────────────────────
