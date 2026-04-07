@@ -73,3 +73,32 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+        # Check for Zero Trust Pillar Alignment section
+        assert "### Zero Trust Pillar Alignment" in content
+        assert "| User | AC, IA, PS |" in content
+        assert "| Device | CM, MA, PE |" in content
+
+        # Verify that progress bars are present in the table
+        # Since AC.1.001 is implemented (1 of 2 AC controls in this setup), User pillar should have a progress bar
+        # In setup_db, AC.1.001 (implemented) and AC.1.002 (partial) are added.
+        # User pillar domains: AC, IA, PS.
+        # Both AC controls start with AC., so they are included in User pillar.
+        # Implementation pct = 1/2 = 50%
+        assert "`█████░░░░░` 50.0%" in content
+
+
+@pytest.mark.anyio
+async def test_dashboard_consistency():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/dashboard")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Check that ZT pillars are present and match expectations
+        assert "zt_pillars" in data
+        pillars = [p["pillar"] for p in data["zt_pillars"]]
+        assert "User" in pillars
+        assert "Automation & Orchestration" in pillars
