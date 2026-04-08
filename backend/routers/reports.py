@@ -23,6 +23,17 @@ from backend.db.database import (AssessmentRecord, ControlRecord,
 
 router = APIRouter()
 
+# Zero Trust Pillar Mapping to CMMC Domains
+ZT_PILLAR_DOMAINS = {
+    "User": ["AC", "IA", "PS"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA"],
+}
+
 
 def get_status_emoji(status: str) -> str:
     """Map implementation status to a visual emoji for better scannability."""
@@ -31,7 +42,7 @@ def get_status_emoji(status: str) -> str:
         "partial": "🟡",
         "partially_implemented": "🟡",
         "planned": "📝",
-        "not_implemented": "🛑",
+        "not_implemented": "🚫",
         "na": "⚪",
         "not_started": "⚪",
     }
@@ -102,6 +113,21 @@ async def generate_ssp(
     )
     progress_bar = get_progress_bar(compliance_pct)
 
+    # Calculate Zero Trust Pillar Progress
+    zt_rows = ""
+    for pillar, domains in ZT_PILLAR_DOMAINS.items():
+        # Get all controls in these domains
+        pillar_controls = [c for c in controls.values() if c.domain in domains]
+        p_total = len(pillar_controls)
+        p_impl = 0
+        for c in pillar_controls:
+            a = assessments_dict.get(c.id)
+            if a and a.status == "implemented":
+                p_impl += 1
+
+        p_pct = (p_impl / p_total * 100) if p_total > 0 else 0
+        zt_rows += f"| {pillar} | {', '.join(domains)} | {get_progress_bar(p_pct, width=8)} |\n"
+
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
@@ -130,11 +156,11 @@ async def generate_ssp(
 | Classification | {classification} |
 | Assessment Date | {date.today()} |
 | Total Controls | {total_controls} |
-| Implemented | {get_status_emoji('implemented')} {status_counts['implemented']} |
-| Partial | {get_status_emoji('partial')} {status_counts['partial']} |
-| Planned | {get_status_emoji('planned')} {status_counts['planned']} |
-| Not Implemented | {get_status_emoji('not_implemented')} {status_counts['not_implemented']} |
-| N/A | {get_status_emoji('na')} {status_counts['na']} |
+| Implemented | {get_status_emoji('implemented')} {status_counts['implemented']} ({status_counts['implemented']/total_controls*100 if total_controls > 0 else 0:.1f}%) |
+| Partial | {get_status_emoji('partial')} {status_counts['partial']} ({status_counts['partial']/total_controls*100 if total_controls > 0 else 0:.1f}%) |
+| Planned | {get_status_emoji('planned')} {status_counts['planned']} ({status_counts['planned']/total_controls*100 if total_controls > 0 else 0:.1f}%) |
+| Not Implemented | {get_status_emoji('not_implemented')} {status_counts['not_implemented']} ({status_counts['not_implemented']/total_controls*100 if total_controls > 0 else 0:.1f}%) |
+| N/A | {get_status_emoji('na')} {status_counts['na']} ({status_counts['na']/total_controls*100 if total_controls > 0 else 0:.1f}%) |
 
 ## 2. Control Implementation Summary
 
@@ -142,13 +168,7 @@ async def generate_ssp(
 
 | ZT Pillar | CMMC Domains | Status |
 |-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
+{zt_rows}
 
 ## 3. Assessment Findings
 
@@ -170,6 +190,8 @@ async def generate_ssp(
 - **Confidence:** {confidence_display}
 - **Notes:** {a.notes or 'None'}
 - **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}
+
+[Back to Top](#system-security-plan-ssp)
 
 """
 
@@ -300,13 +322,7 @@ async def get_dashboard(
             round(implemented / total_controls * 100, 1) if total_controls else 0
         ),
         "zt_pillars": [
-            {"pillar": "User", "domains": ["AC", "IA", "PS"]},
-            {"pillar": "Device", "domains": ["CM", "MA", "PE"]},
-            {"pillar": "Network", "domains": ["SC", "AC"]},
-            {"pillar": "Application", "domains": ["CM", "CA", "SI"]},
-            {"pillar": "Data", "domains": ["MP", "SC", "AU"]},
-            {"pillar": "Visibility & Analytics", "domains": ["AU", "IR", "RA"]},
-            {"pillar": "Automation & Orchestration", "domains": ["IR", "SI", "CA"]},
+            {"pillar": p, "domains": d} for p, d in ZT_PILLAR_DOMAINS.items()
         ],
         "agents": [
             {"name": "orchestrator", "endpoint": "/api/orchestrator"},
