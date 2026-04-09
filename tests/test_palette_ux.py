@@ -73,3 +73,44 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+
+@pytest.mark.anyio
+async def test_dashboard_consistency():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/dashboard")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Check for ZT pillars in dashboard
+        assert "zt_pillars" in data
+        assert len(data["zt_pillars"]) == 7
+        pillars = [p["pillar"] for p in data["zt_pillars"]]
+        assert "User" in pillars
+        assert "Automation & Orchestration" in pillars
+
+
+@pytest.mark.anyio
+async def test_ssp_zt_pillar_alignment():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/ssp")
+        assert resp.status_code == 200
+        content = resp.text
+
+        # Check for Zero Trust Pillar Alignment section
+        assert "Zero Trust Pillar Alignment" in content
+
+        # Check for specific pillars and their progress bars
+        assert "| User | AC, IA, PS |" in content
+        assert "| Automation & Orchestration | IR, SI, CA |" in content
+
+        # Since we added 2 controls in AC (User pillar) and 1 is implemented, 1 is partial
+        # The exact percentage depends on the number of controls in the seeded database.
+        # We just want to ensure it's calculated and displayed as a percentage.
+        import re
+
+        assert re.search(r"\| User \| .* \| `.*` \d+\.\d+%", content)
