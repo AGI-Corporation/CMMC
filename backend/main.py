@@ -8,12 +8,15 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
 
 from agents.devsecops_agent import agent as devsecops
@@ -22,9 +25,18 @@ from agents.mistral_agent import agent as mistral
 from agents.orchestrator import agent as orchestrator
 from backend.db.database import init_db
 from backend.middleware.security import SecurityHeadersMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from backend.routers import assessment, controls, evidence, reports
 
 load_dotenv()
+
+# ─── Logging ──────────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -63,6 +75,28 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# ─── Global Exception Handler ──────────────────────────────────────────────────
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler to prevent sensitive information leakage.
+    Returns a generic 500 error for unhandled exceptions while allowing
+    FastAPI's built-in exceptions to pass through.
+    """
+    if isinstance(exc, (StarletteHTTPException, RequestValidationError)):
+        # Re-raise to let FastAPI's default handlers handle these
+        raise exc
+
+    logger.error(f"Unhandled exception at {request.url}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
