@@ -137,10 +137,13 @@ async def get_db():
             await session.close()
 
 
-async def get_latest_assessments(db: AsyncSession, control_ids: list[str] = None):
+async def get_latest_assessments(
+    db: AsyncSession, control_ids: list[str] = None, columns: list = None
+):
     """
     Shared helper to fetch the latest AssessmentRecord for each control.
     Optionally filtered by a list of control_ids for better performance.
+    Optionally fetch only specific columns to reduce memory and transfer overhead.
     """
     sub_q = select(
         AssessmentRecord.control_id,
@@ -152,11 +155,22 @@ async def get_latest_assessments(db: AsyncSession, control_ids: list[str] = None
 
     sub_q = sub_q.subquery()
 
-    query = select(AssessmentRecord).join(
+    if columns:
+        # Ensure control_id is included if we are returning a dict keyed by it
+        if AssessmentRecord.control_id not in columns:
+            columns = [AssessmentRecord.control_id] + list(columns)
+        query = select(*columns)
+    else:
+        query = select(AssessmentRecord)
+
+    query = query.join(
         sub_q,
         (AssessmentRecord.control_id == sub_q.c.control_id)
         & (AssessmentRecord.assessment_date == sub_q.c.max_date),
     )
 
     result = await db.execute(query)
+    if columns:
+        # Return rows as-is when selective columns are requested
+        return {row.control_id: row for row in result.all()}
     return {a.control_id: a for a in result.scalars().all()}

@@ -36,6 +36,7 @@ class ImplementationStatus(str, Enum):
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
     IMPLEMENTED = "implemented"
+    NOT_IMPLEMENTED = "not_implemented"
     NOT_APPLICABLE = "not_applicable"
     PARTIALLY_IMPLEMENTED = "partially_implemented"
     PLANNED = "planned"
