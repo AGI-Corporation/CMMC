@@ -7,3 +7,8 @@
 **Vulnerability:** Not a direct security vulnerability, but an environmental instability. The `requirements.txt` allowed `mistralai>=1.1.0`, which pulled in version 2.x.
 **Learning:** MistralAI 2.x introduces breaking changes in the client import structure (`from mistralai import Mistral` fails if not using the new client correctly or if expecting the old one). This caused the entire application (including security tests) to fail on startup.
 **Prevention:** Pin critical dependencies like `mistralai==1.1.0` in `requirements.txt` to ensure consistent behavior across development and CI environments, especially when using agents that rely on specific API structures.
+
+## 2025-04-12 - [MEDIUM] Fix information leakage in API errors
+**Vulnerability:** Raw exception messages (`str(e)`) were being returned directly to the client in HTTP 500 errors in `agents/mistral_agent/agent.py`.
+**Learning:** Returning unhandled exception details can leak sensitive internal state, stack traces, or configuration details to potentially malicious actors.
+**Prevention:** Ensure all APIs catch general exceptions, log the raw error internally using `logging.error()`, and return a generic, sanitized HTTP 500 message like "Internal server error" to the client.
