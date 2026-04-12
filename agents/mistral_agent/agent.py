@@ -8,6 +8,7 @@ implementation evidence, and produce POAM recommendations.
 """
 
 import json
+import logging
 import os
 import uuid
 from datetime import UTC, datetime
@@ -20,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.database import AgentRunRecord, get_db
 
 # ─── Mistral Configuration ─────────────────────────────────────────────────────
+logger = logging.getLogger(__name__)
+
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
 MISTRAL_CODE_MODEL = os.getenv("MISTRAL_CODE_MODEL", "codestral-latest")
@@ -318,7 +321,10 @@ async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_d
             "model": MISTRAL_MODEL,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Gap analysis failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="An error occurred during gap analysis"
+        )
 
 
 @router.post("/code-review", summary="DevSecOps code security analysis with Codestral")
@@ -333,7 +339,10 @@ async def code_review(req: CodeReviewRequest, db: AsyncSession = Depends(get_db)
         )
         return {"analysis": result, "model": MISTRAL_CODE_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Code review failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="An error occurred during code review"
+        )
 
 
 @router.post("/ask", summary="Ask a CMMC/ZT compliance question")
@@ -343,4 +352,7 @@ async def ask_question(req: QuestionRequest):
         answer = await agent.answer_compliance_question(req.question, req.context)
         return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Ask question failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="An error occurred while processing your question"
+        )
