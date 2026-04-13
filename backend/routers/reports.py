@@ -9,15 +9,19 @@ from the current assessment state. Output formats: Markdown, JSON, CSV.
 import csv
 import io
 from datetime import UTC, date, datetime
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (AssessmentRecord, ControlRecord, get_db,
-                                 get_latest_assessments)
+from backend.db.database import (
+    AssessmentRecord,
+    ControlRecord,
+    get_db,
+    get_latest_assessments,
+)
 
 router = APIRouter()
 
