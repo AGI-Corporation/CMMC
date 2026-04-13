@@ -8,12 +8,18 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exception_handlers import (http_exception_handler,
+                                        request_validation_exception_handler)
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi_mcp import FastApiMCP
 
 from agents.devsecops_agent import agent as devsecops
@@ -25,6 +31,13 @@ from backend.middleware.security import SecurityHeadersMiddleware
 from backend.routers import assessment, controls, evidence, reports
 
 load_dotenv()
+
+# Configure central logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -81,6 +94,27 @@ app.include_router(
     devsecops.router, prefix="/api/agents/devsecops", tags=["DevSecOps Agent"]
 )
 app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
+
+
+# ─── Global Exception Handler ─────────────────────────────────────────────────
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler to prevent sensitive information leakage.
+    Logs the actual error and returns a generic 500 response.
+    """
+    if isinstance(exc, StarletteHTTPException):
+        return await http_exception_handler(request, exc)
+    if isinstance(exc, RequestValidationError):
+        return await request_validation_exception_handler(request, exc)
+
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
