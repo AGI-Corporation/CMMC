@@ -7,3 +7,8 @@
 **Vulnerability:** Not a direct security vulnerability, but an environmental instability. The `requirements.txt` allowed `mistralai>=1.1.0`, which pulled in version 2.x.
 **Learning:** MistralAI 2.x introduces breaking changes in the client import structure (`from mistralai import Mistral` fails if not using the new client correctly or if expecting the old one). This caused the entire application (including security tests) to fail on startup.
 **Prevention:** Pin critical dependencies like `mistralai==1.1.0` in `requirements.txt` to ensure consistent behavior across development and CI environments, especially when using agents that rely on specific API structures.
+
+## 2025-05-15 - Information Exposure through Error Messages
+**Vulnerability:** Raw exception details (`str(e)`) were being returned to the client in HTTP 500 responses across multiple endpoints, potentially leaking sensitive system state, file paths, or credentials.
+**Learning:** Defaulting to returning exception strings in API responses is a common but dangerous practice. A centralized exception handler in FastAPI provides a robust safety net, but must be carefully implemented to avoid swallowing intentional `HTTPException` or `RequestValidationError` responses.
+**Prevention:** Implement a global `@app.exception_handler(Exception)` that logs full tracebacks server-side but returns generic messages to clients. Avoid `detail=str(e)` in all production code.
