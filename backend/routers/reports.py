@@ -264,7 +264,7 @@ async def generate_poam(
         content=csv_content,
         media_type="text/csv",
         headers={
-            "Content-Disposition": f'attachment; filename="poam_{system_name.replace(" ","_")}.csv"'
+            "Content-Disposition": f'attachment; filename="poam_{system_name.replace(" ", "_")}.csv"'
         },
     )
 
