@@ -317,8 +317,10 @@ async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_d
             "analysis": result,
             "model": MISTRAL_MODEL,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        # Re-raise as a generic internal server error.
+        # The global exception handler will log the full traceback.
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/code-review", summary="DevSecOps code security analysis with Codestral")
@@ -332,8 +334,8 @@ async def code_review(req: CodeReviewRequest, db: AsyncSession = Depends(get_db)
             db, "manual", "Code Review", req.relevant_controls or [], result
         )
         return {"analysis": result, "model": MISTRAL_CODE_MODEL}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/ask", summary="Ask a CMMC/ZT compliance question")
@@ -342,5 +344,5 @@ async def ask_question(req: QuestionRequest):
     try:
         answer = await agent.answer_compliance_question(req.question, req.context)
         return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")

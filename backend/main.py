@@ -8,13 +8,19 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import (http_exception_handler,
+                                        request_validation_exception_handler)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from agents.devsecops_agent import agent as devsecops
 from agents.icam_agent import agent as icam
@@ -25,6 +31,12 @@ from backend.middleware.security import SecurityHeadersMiddleware
 from backend.routers import assessment, controls, evidence, reports
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -63,6 +75,37 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# ─── Exception Handlers ────────────────────────────────────────────────────────
+
+
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Pass-through for expected HTTP exceptions to preserve their status and detail."""
+    return await http_exception_handler(request, exc)
+
+
+@app.exception_handler(RequestValidationError)
+async def custom_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+):
+    """Pass-through for validation errors."""
+    return await request_validation_exception_handler(request, exc)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global catch-all for unhandled exceptions.
+    Logs the full traceback but returns a generic error message to the client.
+    """
+    logger.error(f"Unhandled exception at {request.url}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
