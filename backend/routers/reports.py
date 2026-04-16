@@ -41,11 +41,11 @@ def get_maturity_pct(assessments: List[AssessmentRecord], domains: List[str]) ->
         return 0.0
 
     score = sum(
-        1.0
-        if a.status == "implemented"
-        else 0.5
-        if a.status in ["partial", "partially_implemented"]
-        else 0.0
+        (
+            1.0
+            if a.status == "implemented"
+            else 0.5 if a.status in ["partial", "partially_implemented"] else 0.0
+        )
         for a in relevant
     )
     return (score / len(relevant)) * 100
