@@ -137,10 +137,13 @@ async def get_db():
             await session.close()
 
 
-async def get_latest_assessments(db: AsyncSession, control_ids: list[str] = None):
+async def get_latest_assessments(
+    db: AsyncSession, control_ids: list[str] = None, columns: list = None
+):
     """
     Shared helper to fetch the latest AssessmentRecord for each control.
     Optionally filtered by a list of control_ids for better performance.
+    Optionally specify columns to fetch only required fields.
     """
     sub_q = select(
         AssessmentRecord.control_id,
@@ -152,11 +155,25 @@ async def get_latest_assessments(db: AsyncSession, control_ids: list[str] = None
 
     sub_q = sub_q.subquery()
 
-    query = select(AssessmentRecord).join(
-        sub_q,
-        (AssessmentRecord.control_id == sub_q.c.control_id)
-        & (AssessmentRecord.assessment_date == sub_q.c.max_date),
-    )
+    if columns:
+        # Ensure control_id is included for dictionary mapping
+        query_cols = list(columns)
+        if AssessmentRecord.control_id not in query_cols:
+            query_cols.insert(0, AssessmentRecord.control_id)
 
-    result = await db.execute(query)
-    return {a.control_id: a for a in result.scalars().all()}
+        query = select(*query_cols).join(
+            sub_q,
+            (AssessmentRecord.control_id == sub_q.c.control_id)
+            & (AssessmentRecord.assessment_date == sub_q.c.max_date),
+        )
+        result = await db.execute(query)
+        # Return Rows (support attribute access)
+        return {r.control_id: r for r in result.all()}
+    else:
+        query = select(AssessmentRecord).join(
+            sub_q,
+            (AssessmentRecord.control_id == sub_q.c.control_id)
+            & (AssessmentRecord.assessment_date == sub_q.c.max_date),
+        )
+        result = await db.execute(query)
+        return {a.control_id: a for a in result.scalars().all()}
