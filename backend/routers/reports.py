@@ -23,6 +23,16 @@ from backend.db.database import (AssessmentRecord, ControlRecord,
 
 router = APIRouter()
 
+ZT_PILLAR_DOMAINS = {
+    "User": ["AC", "IA", "PS"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA"],
+}
+
 
 def get_status_emoji(status: str) -> str:
     """Map implementation status to a visual emoji for better scannability."""
@@ -100,7 +110,24 @@ async def generate_ssp(
         if total_controls_count > 0
         else 0
     )
-    progress_bar = get_progress_bar(compliance_pct)
+
+    # Calculate ZT Pillar status
+    zt_pillar_status = {}
+    for pillar, domains in ZT_PILLAR_DOMAINS.items():
+        pillar_assessments = [
+            a
+            for a in assessments
+            if a.control_id.split(".")[0] in domains
+        ]
+        if not pillar_assessments:
+            zt_pillar_status[pillar] = "0.0%"
+            continue
+
+        pillar_implemented = sum(
+            1 for a in pillar_assessments if a.status == "implemented"
+        )
+        pillar_pct = (pillar_implemented / len(pillar_assessments)) * 100
+        zt_pillar_status[pillar] = get_progress_bar(pillar_pct, width=5)
 
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
@@ -136,19 +163,23 @@ async def generate_ssp(
 | Not Implemented | {get_status_emoji('not_implemented')} {status_counts['not_implemented']} |
 | N/A | {get_status_emoji('na')} {status_counts['na']} |
 
+[↑ Back to Top](#system-security-plan-ssp)
+
 ## 2. Control Implementation Summary
 
 ### Zero Trust Pillar Alignment
 
 | ZT Pillar | CMMC Domains | Status |
 |-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
+| User | AC, IA, PS | {zt_pillar_status['User']} |
+| Device | CM, MA, PE | {zt_pillar_status['Device']} |
+| Network | SC, AC | {zt_pillar_status['Network']} |
+| Application | CM, CA, SI | {zt_pillar_status['Application']} |
+| Data | MP, SC, AU | {zt_pillar_status['Data']} |
+| Visibility & Analytics | AU, IR, RA | {zt_pillar_status['Visibility & Analytics']} |
+| Automation & Orchestration | IR, SI, CA | {zt_pillar_status['Automation & Orchestration']} |
+
+[↑ Back to Top](#system-security-plan-ssp)
 
 ## 3. Assessment Findings
 
@@ -174,6 +205,8 @@ async def generate_ssp(
 """
 
     ssp += """
+[↑ Back to Top](#system-security-plan-ssp)
+
 ## 4. Next Steps
 
 1. Complete POA&M for all not_implemented controls
@@ -300,13 +333,8 @@ async def get_dashboard(
             round(implemented / total_controls * 100, 1) if total_controls else 0
         ),
         "zt_pillars": [
-            {"pillar": "User", "domains": ["AC", "IA", "PS"]},
-            {"pillar": "Device", "domains": ["CM", "MA", "PE"]},
-            {"pillar": "Network", "domains": ["SC", "AC"]},
-            {"pillar": "Application", "domains": ["CM", "CA", "SI"]},
-            {"pillar": "Data", "domains": ["MP", "SC", "AU"]},
-            {"pillar": "Visibility & Analytics", "domains": ["AU", "IR", "RA"]},
-            {"pillar": "Automation & Orchestration", "domains": ["IR", "SI", "CA"]},
+            {"pillar": pillar, "domains": domains}
+            for pillar, domains in ZT_PILLAR_DOMAINS.items()
         ],
         "agents": [
             {"name": "orchestrator", "endpoint": "/api/orchestrator"},
