@@ -8,20 +8,26 @@ from the current assessment state. Output formats: Markdown, JSON, CSV.
 
 import csv
 import io
-import json
 from datetime import UTC, date, datetime
-from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (AssessmentRecord, ControlRecord,
-                                 EvidenceRecord, get_db,
-                                 get_latest_assessments)
+from backend.db.database import ControlRecord, get_db, get_latest_assessments
 
 router = APIRouter()
+
+ZT_PILLAR_DOMAINS = {
+    "User": ["AC", "IA", "PS"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA"],
+}
 
 
 def get_status_emoji(status: str) -> str:
@@ -94,21 +100,31 @@ async def generate_ssp(
     )
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
-    total_controls_count = len(controls)
-    compliance_pct = (
-        (status_counts["implemented"] / total_controls_count * 100)
-        if total_controls_count > 0
-        else 0
-    )
-    progress_bar = get_progress_bar(compliance_pct)
+    # Calculate ZT Pillar status
+    zt_pillar_status = {}
+    for pillar, domains in ZT_PILLAR_DOMAINS.items():
+        pillar_assessments = [
+            a
+            for a in assessments
+            if a.control_id.split(".")[0] in domains
+        ]
+        if not pillar_assessments:
+            zt_pillar_status[pillar] = "0.0%"
+            continue
+
+        pillar_implemented = sum(
+            1 for a in pillar_assessments if a.status == "implemented"
+        )
+        pillar_pct = (pillar_implemented / len(pillar_assessments)) * 100
+        zt_pillar_status[pillar] = get_progress_bar(pillar_pct, width=5)
 
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
-**Classification:** {classification}  
+**Classification:** {classification}
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
-**Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
-**SPRS Score Estimate:** {sprs_estimate}  
+**Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2
+**SPRS Score Estimate:** {sprs_estimate}
 **Overall Compliance:** {get_progress_bar(implemented_pct)}
 
 ---
@@ -136,19 +152,23 @@ async def generate_ssp(
 | Not Implemented | {get_status_emoji('not_implemented')} {status_counts['not_implemented']} |
 | N/A | {get_status_emoji('na')} {status_counts['na']} |
 
+[↑ Back to Top](#system-security-plan-ssp)
+
 ## 2. Control Implementation Summary
 
 ### Zero Trust Pillar Alignment
 
 | ZT Pillar | CMMC Domains | Status |
 |-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
+| User | AC, IA, PS | {zt_pillar_status['User']} |
+| Device | CM, MA, PE | {zt_pillar_status['Device']} |
+| Network | SC, AC | {zt_pillar_status['Network']} |
+| Application | CM, CA, SI | {zt_pillar_status['Application']} |
+| Data | MP, SC, AU | {zt_pillar_status['Data']} |
+| Visibility & Analytics | AU, IR, RA | {zt_pillar_status['Visibility & Analytics']} |
+| Automation & Orchestration | IR, SI, CA | {zt_pillar_status['Automation & Orchestration']} |
+
+[↑ Back to Top](#system-security-plan-ssp)
 
 ## 3. Assessment Findings
 
@@ -174,6 +194,8 @@ async def generate_ssp(
 """
 
     ssp += """
+[↑ Back to Top](#system-security-plan-ssp)
+
 ## 4. Next Steps
 
 1. Complete POA&M for all not_implemented controls
@@ -237,7 +259,11 @@ async def generate_poam(
                     a.status,
                     f"{a.confidence:.0%}",
                     f"Implement {a.control_id}",
-                    a.next_review.strftime("%Y-%m-%d") if a.next_review else "TBD",
+                    (
+                        a.next_review.strftime("%Y-%m-%d")
+                        if a.next_review
+                        else "TBD"
+                    ),
                     a.assessor or "ISSO",
                     "TBD",
                     a.notes or "",
@@ -249,7 +275,9 @@ async def generate_poam(
         content=csv_content,
         media_type="text/csv",
         headers={
-            "Content-Disposition": f'attachment; filename="poam_{system_name.replace(" ","_")}.csv"'
+            "Content-Disposition": (
+                f'attachment; filename="poam_{system_name.replace(" ", "_")}.csv"'
+            )
         },
     )
 
@@ -300,13 +328,8 @@ async def get_dashboard(
             round(implemented / total_controls * 100, 1) if total_controls else 0
         ),
         "zt_pillars": [
-            {"pillar": "User", "domains": ["AC", "IA", "PS"]},
-            {"pillar": "Device", "domains": ["CM", "MA", "PE"]},
-            {"pillar": "Network", "domains": ["SC", "AC"]},
-            {"pillar": "Application", "domains": ["CM", "CA", "SI"]},
-            {"pillar": "Data", "domains": ["MP", "SC", "AU"]},
-            {"pillar": "Visibility & Analytics", "domains": ["AU", "IR", "RA"]},
-            {"pillar": "Automation & Orchestration", "domains": ["IR", "SI", "CA"]},
+            {"pillar": pillar, "domains": domains}
+            for pillar, domains in ZT_PILLAR_DOMAINS.items()
         ],
         "agents": [
             {"name": "orchestrator", "endpoint": "/api/orchestrator"},
