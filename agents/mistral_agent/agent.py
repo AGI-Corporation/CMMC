@@ -318,7 +318,9 @@ async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_d
             "model": MISTRAL_MODEL,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Re-raise to be handled by the global exception handler in main.py
+        # This prevents leaking sensitive error details to the client
+        raise e
 
 
 @router.post("/code-review", summary="DevSecOps code security analysis with Codestral")
@@ -333,7 +335,8 @@ async def code_review(req: CodeReviewRequest, db: AsyncSession = Depends(get_db)
         )
         return {"analysis": result, "model": MISTRAL_CODE_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Re-raise to be handled by the global exception handler in main.py
+        raise e
 
 
 @router.post("/ask", summary="Ask a CMMC/ZT compliance question")
@@ -343,4 +346,5 @@ async def ask_question(req: QuestionRequest):
         answer = await agent.answer_compliance_question(req.question, req.context)
         return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Re-raise to be handled by the global exception handler in main.py
+        raise e
