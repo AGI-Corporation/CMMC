@@ -7,8 +7,3 @@
 **Vulnerability:** Not a direct security vulnerability, but an environmental instability. The `requirements.txt` allowed `mistralai>=1.1.0`, which pulled in version 2.x.
 **Learning:** MistralAI 2.x introduces breaking changes in the client import structure (`from mistralai import Mistral` fails if not using the new client correctly or if expecting the old one). This caused the entire application (including security tests) to fail on startup.
 **Prevention:** Pin critical dependencies like `mistralai==1.1.0` in `requirements.txt` to ensure consistent behavior across development and CI environments, especially when using agents that rely on specific API structures.
-
-## 2026-04-18 - Centralized Error Leakage Prevention
-**Vulnerability:** Information Exposure through Error Messages. Route handlers were explicitly returning raw exception strings (str(e)) in 500 responses, potentially leaking sensitive internals like API keys or system paths.
-**Learning:** Even with SecurityHeadersMiddleware, an application can leak data through exception details. Centralizing error handling at the application level is more robust than relying on per-route try/except blocks.
-**Prevention:** Implement a global exception handler for 'Exception' in FastAPI that returns a generic message, while specifically allowing 'HTTPException' and 'RequestValidationError' to pass through to preserve legitimate 4xx client feedback.

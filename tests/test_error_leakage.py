@@ -9,8 +9,8 @@ async def test_global_exception_handler_leakage():
     """
     Test that unhandled exceptions do not leak sensitive information.
     """
-    # We'll mock one of the endpoints to raise an unexpected exception
-    with patch("backend.routers.reports.generate_ssp", side_effect=ValueError("Secret database connection string leaked!")):
+    # We'll mock a helper function called by the endpoint to raise an unexpected exception
+    with patch("backend.routers.reports.get_latest_assessments", side_effect=ValueError("Secret database connection string leaked!")):
         async with AsyncClient(
             transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
         ) as ac:
