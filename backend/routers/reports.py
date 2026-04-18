@@ -52,6 +52,30 @@ def get_confidence_stars(confidence: float) -> str:
     return "⭐" * stars + "☆" * (5 - stars)
 
 
+ZT_PILLAR_DOMAINS = {
+    "User": ["AC", "IA", "PS"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA"],
+}
+
+
+def get_maturity_pct(assessments: List[AssessmentRecord]) -> float:
+    """Calculate weighted maturity percentage (partial = 0.5)."""
+    if not assessments:
+        return 0.0
+    points = 0.0
+    for a in assessments:
+        if a.status == "implemented":
+            points += 1.0
+        elif a.status in ["partial", "partially_implemented"]:
+            points += 0.5
+    return (points / len(assessments)) * 100
+
+
 @router.get("/ssp", summary="Generate System Security Plan (SSP) in Markdown")
 async def generate_ssp(
     system_name: str = "AGI Corp CMMC System",
@@ -123,6 +147,8 @@ async def generate_ssp(
 
 ## 1. System Overview
 
+[↑ Back to Top](#system-security-plan-ssp)
+
 | Field | Value |
 |-------|-------|
 | System Name | {system_name} |
@@ -140,19 +166,23 @@ async def generate_ssp(
 
 ### Zero Trust Pillar Alignment
 
-| ZT Pillar | CMMC Domains | Status |
-|-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
+| ZT Pillar | CMMC Domains | Progress |
+|-----------|--------------|----------|
+"""
+
+    for pillar, domains in ZT_PILLAR_DOMAINS.items():
+        pillar_assessments = [
+            a for a in assessments if a.control_id.split(".")[0] in domains
+        ]
+        pct = get_maturity_pct(pillar_assessments)
+        ssp += f"| {pillar} | {', '.join(domains)} | {get_progress_bar(pct)} |\n"
+
+    ssp += """
+[↑ Back to Top](#system-security-plan-ssp)
 
 ## 3. Assessment Findings
 
-*Note: Only the first 20 assessment findings are displayed in this summary.*
+*Note: Showing {min(len(assessments), 20)} of {len(assessments)} findings.*
 
 """
 
@@ -174,6 +204,8 @@ async def generate_ssp(
 """
 
     ssp += """
+[↑ Back to Top](#system-security-plan-ssp)
+
 ## 4. Next Steps
 
 1. Complete POA&M for all not_implemented controls
@@ -300,13 +332,7 @@ async def get_dashboard(
             round(implemented / total_controls * 100, 1) if total_controls else 0
         ),
         "zt_pillars": [
-            {"pillar": "User", "domains": ["AC", "IA", "PS"]},
-            {"pillar": "Device", "domains": ["CM", "MA", "PE"]},
-            {"pillar": "Network", "domains": ["SC", "AC"]},
-            {"pillar": "Application", "domains": ["CM", "CA", "SI"]},
-            {"pillar": "Data", "domains": ["MP", "SC", "AU"]},
-            {"pillar": "Visibility & Analytics", "domains": ["AU", "IR", "RA"]},
-            {"pillar": "Automation & Orchestration", "domains": ["IR", "SI", "CA"]},
+            {"pillar": p, "domains": d} for p, d in ZT_PILLAR_DOMAINS.items()
         ],
         "agents": [
             {"name": "orchestrator", "endpoint": "/api/orchestrator"},
