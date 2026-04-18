@@ -8,12 +8,19 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
 from fastapi_mcp import FastApiMCP
 
 from agents.devsecops_agent import agent as devsecops
@@ -33,6 +40,14 @@ async def lifespan(app: FastAPI):
     await init_db()
     yield
 
+
+# ─── Logging ──────────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 # ─── FastAPI Application ───────────────────────────────────────────────────────
 
@@ -63,6 +78,35 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# ─── Exception Handlers ───────────────────────────────────────────────────────
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Pass-through for validation errors to preserve 422 responses."""
+    return await request_validation_exception_handler(request, exc)
+
+
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
+    """Pass-through for HTTP exceptions to preserve 4xx responses."""
+    return await http_exception_handler(request, exc)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler to prevent sensitive information leakage.
+    Logs the full error internally but returns a generic message to the client.
+    """
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
