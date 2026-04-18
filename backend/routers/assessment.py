@@ -81,7 +81,10 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ControlRecord))
     controls = result.scalars().all()
 
-    assessments_map = await get_latest_assessments(db)
+    # Optimization: Only fetch columns needed for dashboard summary
+    assessments_map = await get_latest_assessments(
+        db, columns=[AssessmentRecord.control_id, AssessmentRecord.status]
+    )
 
     by_domain = {}
     by_level = {
@@ -160,7 +163,10 @@ async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ControlRecord))
     controls = result.scalars().all()
 
-    assessments_map = await get_latest_assessments(db)
+    # Optimization: Only fetch columns needed for SPRS calculation
+    assessments_map = await get_latest_assessments(
+        db, columns=[AssessmentRecord.control_id, AssessmentRecord.status]
+    )
 
     sprs = 110
     deductions_list = []
