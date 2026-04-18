@@ -7,3 +7,8 @@
 **Vulnerability:** Not a direct security vulnerability, but an environmental instability. The `requirements.txt` allowed `mistralai>=1.1.0`, which pulled in version 2.x.
 **Learning:** MistralAI 2.x introduces breaking changes in the client import structure (`from mistralai import Mistral` fails if not using the new client correctly or if expecting the old one). This caused the entire application (including security tests) to fail on startup.
 **Prevention:** Pin critical dependencies like `mistralai==1.1.0` in `requirements.txt` to ensure consistent behavior across development and CI environments, especially when using agents that rely on specific API structures.
+
+## 2026-05-20 - Internal Server Error Exposure
+**Vulnerability:** FastAPIs `HTTPException` exposed internal error details via `detail=str(e)` in the Mistral agent endpoints (`/gap-analysis`, `/code-review`, `/ask`), leading to potential information leakage about internal application state, database schemas, or internal APIs.
+**Learning:** Developers often pass `str(e)` to HTTPExceptions for debugging purposes, but this practice inadvertently creates an information disclosure vulnerability in production.
+**Prevention:** Catch generic exceptions, log them internally using `logging.error(..., exc_info=True)`, and return a generic, static message like "An internal server error occurred" to the client.
