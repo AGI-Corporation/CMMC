@@ -7,3 +7,7 @@
 **Vulnerability:** Not a direct security vulnerability, but an environmental instability. The `requirements.txt` allowed `mistralai>=1.1.0`, which pulled in version 2.x.
 **Learning:** MistralAI 2.x introduces breaking changes in the client import structure (`from mistralai import Mistral` fails if not using the new client correctly or if expecting the old one). This caused the entire application (including security tests) to fail on startup.
 **Prevention:** Pin critical dependencies like `mistralai==1.1.0` in `requirements.txt` to ensure consistent behavior across development and CI environments, especially when using agents that rely on specific API structures.
+## 2026-05-20 - Fix Error Handling Information Disclosure
+**Vulnerability:** FastAPIs HTTPException returned `str(e)` in error details, exposing internal backend state and stack traces to external API consumers.
+**Learning:** Developers often pass caught exceptions directly into generic 500 error responses during fast prototyping or API development, resulting in information disclosure.
+**Prevention:** Catch generic exceptions, log them securely via `logging.error(..., exc_info=True)` for internal developers, and always return a generic error message (e.g., "An internal error occurred") to the end user.
