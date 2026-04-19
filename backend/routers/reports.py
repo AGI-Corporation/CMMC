@@ -105,10 +105,10 @@ async def generate_ssp(
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
-**Classification:** {classification}  
+**Classification:** {classification}
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
-**Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
-**SPRS Score Estimate:** {sprs_estimate}  
+**Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2
+**SPRS Score Estimate:** {sprs_estimate}
 **Overall Compliance:** {get_progress_bar(implemented_pct)}
 
 ---
