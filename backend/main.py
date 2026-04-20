@@ -8,13 +8,17 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
+from starlette.exceptions import HTTPException
 
 from agents.devsecops_agent import agent as devsecops
 from agents.icam_agent import agent as icam
@@ -25,6 +29,12 @@ from backend.middleware.security import SecurityHeadersMiddleware
 from backend.routers import assessment, controls, evidence, reports
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -63,6 +73,38 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# ─── Global Exception Handler ─────────────────────────────────────────────────
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler to prevent sensitive information leakage.
+    Logs the full error internally but returns a generic message to the client.
+    """
+    # If the exception is already an HTTPException or RequestValidationError,
+    # let FastAPI's default handlers handle it to preserve 4xx responses.
+    if isinstance(exc, HTTPException):
+        from fastapi.exception_handlers import \
+            http_exception_handler as default_http_handler
+        return await default_http_handler(request, exc)
+
+    if isinstance(exc, RequestValidationError):
+        from fastapi.exception_handlers import \
+            request_validation_exception_handler as default_validation_handler
+        return await default_validation_handler(request, exc)
+
+    # Log the full exception for internal debugging
+    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+
+    # Return a safe, generic error message to the client
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
