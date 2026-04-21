@@ -73,3 +73,30 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+
+@pytest.mark.anyio
+async def test_ssp_zt_pillar_alignment():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/ssp")
+        assert resp.status_code == 200
+        content = resp.text
+
+        # Check for Zero Trust Pillar Alignment section
+        assert "### Zero Trust Pillar Alignment" in content
+
+        # Check for pillar names
+        assert "| User |" in content
+        assert "| Device |" in content
+        assert "| Network |" in content
+
+        # Since we have AC.1.001 implemented and AC.1.002 partial in setup_db
+        # User pillar has AC (among others)
+        # AC.1.001 should count as implemented
+        # AC.1.002 is partial (not implemented)
+        # User pillar should have a progress bar
+        # In a real scenario it would depend on all AC, IA, PS controls
+        # But here we just check if the progress bars are rendered in the table
+        assert "| User | AC, IA, PS | `█" in content or "| User | AC, IA, PS | `░" in content

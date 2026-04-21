@@ -23,6 +23,16 @@ from backend.db.database import (AssessmentRecord, ControlRecord,
 
 router = APIRouter()
 
+ZT_PILLAR_DOMAINS = {
+    "User": ["AC", "IA", "PS"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA"],
+}
+
 
 def get_status_emoji(status: str) -> str:
     """Map implementation status to a visual emoji for better scannability."""
@@ -102,6 +112,20 @@ async def generate_ssp(
     )
     progress_bar = get_progress_bar(compliance_pct)
 
+    # Calculate ZT Pillar Alignment
+    zt_rows = []
+    for pillar, pillar_domains in ZT_PILLAR_DOMAINS.items():
+        pillar_assessments = [
+            a
+            for a in assessments
+            if any(a.control_id.startswith(d) for d in pillar_domains)
+        ]
+        implemented_count = sum(1 for a in pillar_assessments if a.status == "implemented")
+        total_pillar = len(pillar_assessments)
+        pct = (implemented_count / total_pillar * 100) if total_pillar > 0 else 0
+        zt_rows.append(f"| {pillar} | {', '.join(pillar_domains)} | {get_progress_bar(pct)} |")
+    zt_table = "\n".join(zt_rows)
+
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
@@ -140,15 +164,9 @@ async def generate_ssp(
 
 ### Zero Trust Pillar Alignment
 
-| ZT Pillar | CMMC Domains | Status |
-|-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
+| ZT Pillar | CMMC Domains | Progress |
+|-----------|--------------|----------|
+{zt_table}
 
 ## 3. Assessment Findings
 
@@ -300,13 +318,7 @@ async def get_dashboard(
             round(implemented / total_controls * 100, 1) if total_controls else 0
         ),
         "zt_pillars": [
-            {"pillar": "User", "domains": ["AC", "IA", "PS"]},
-            {"pillar": "Device", "domains": ["CM", "MA", "PE"]},
-            {"pillar": "Network", "domains": ["SC", "AC"]},
-            {"pillar": "Application", "domains": ["CM", "CA", "SI"]},
-            {"pillar": "Data", "domains": ["MP", "SC", "AU"]},
-            {"pillar": "Visibility & Analytics", "domains": ["AU", "IR", "RA"]},
-            {"pillar": "Automation & Orchestration", "domains": ["IR", "SI", "CA"]},
+            {"pillar": k, "domains": v} for k, v in ZT_PILLAR_DOMAINS.items()
         ],
         "agents": [
             {"name": "orchestrator", "endpoint": "/api/orchestrator"},
