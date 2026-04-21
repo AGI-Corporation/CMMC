@@ -27,14 +27,13 @@ async def setup_db():
 @pytest.mark.anyio
 async def test_error_leakage_mistral():
     """
-    Test that the Mistral agent doesn't leak sensitive error details in its response.
-    Verified that it now returns "Internal server error" instead of exception details.
+    Test that the Mistral agent doesn't leak sensitive error details.
     """
-    # Mocking the analyze_gap method to raise a sensitive exception
     with patch("agents.mistral_agent.agent.agent.analyze_gap") as mock_analyze:
         mock_analyze.side_effect = Exception("Sensitive info: DB_PASSWORD=secret123")
 
-        async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test") as ac:
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
             response = await ac.post("/api/agents/mistral/gap-analysis", json={
                 "control_id": "AC.1.001",
                 "control_title": "Title",
@@ -50,10 +49,10 @@ async def test_error_leakage_mistral():
 @pytest.mark.anyio
 async def test_http_exception_not_swallowed():
     """
-    Test that explicit HTTPExceptions (like 404) are NOT swallowed by the global handler
-    and still return their intended status and detail.
+    Test that explicit HTTPExceptions (like 404) are NOT swallowed.
     """
-    async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test") as ac:
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # Use a non-existent control ID to trigger 404
         response = await ac.get("/api/controls/NON_EXISTENT_CONTROL_ID")
 
@@ -66,7 +65,8 @@ async def test_validation_error_preserved():
     """
     Test that request validation errors (422) are still returned correctly.
     """
-    async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test") as ac:
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # Missing required fields in POST body to trigger 422
         response = await ac.post("/api/agents/mistral/gap-analysis", json={})
 

@@ -154,7 +154,11 @@ async def health_check():
 mcp = FastApiMCP(
     app,
     name="CMMC Compliance MCP",
-    description="MCP server for CMMC 2.0 compliance automation. Provides tools for control lookup, evidence collection, assessment scoring, SPRS calculation, and SSP/POAM generation.",
+    description=(
+        "MCP server for CMMC 2.0 compliance automation. "
+        "Provides tools for control lookup, evidence collection, "
+        "assessment scoring, SPRS calculation, and SSP/POAM generation."
+    ),
 )
 
 mcp.mount()
