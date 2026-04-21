@@ -1,13 +1,15 @@
 import os
 import pytest
 from httpx import ASGITransport, AsyncClient
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from backend.main import app
 from backend.db.database import Base, engine, init_db
+
 
 @pytest.fixture(scope="session")
 def anyio_backend():
     return "asyncio"
+
 
 @pytest.fixture(scope="session", autouse=True)
 async def setup_db():
@@ -21,6 +23,7 @@ async def setup_db():
     if os.path.exists("./test_leakage.db"):
         os.remove("./test_leakage.db")
 
+
 @pytest.mark.anyio
 async def test_error_leakage_mistral():
     """
@@ -28,7 +31,6 @@ async def test_error_leakage_mistral():
     Verified that it now returns "Internal server error" instead of exception details.
     """
     # Mocking the analyze_gap method to raise a sensitive exception
-    # Need to make sure we patch the right thing. In agent.py, agent = MistralComplianceAgent()
     with patch("agents.mistral_agent.agent.agent.analyze_gap") as mock_analyze:
         mock_analyze.side_effect = Exception("Sensitive info: DB_PASSWORD=secret123")
 
@@ -44,6 +46,7 @@ async def test_error_leakage_mistral():
         assert "secret123" not in response.text
         assert response.json()["detail"] == "Internal server error"
 
+
 @pytest.mark.anyio
 async def test_http_exception_not_swallowed():
     """
@@ -56,6 +59,7 @@ async def test_http_exception_not_swallowed():
 
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
+
 
 @pytest.mark.anyio
 async def test_validation_error_preserved():
