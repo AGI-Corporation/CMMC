@@ -8,13 +8,17 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from agents.devsecops_agent import agent as devsecops
 from agents.icam_agent import agent as icam
@@ -25,6 +29,13 @@ from backend.middleware.security import SecurityHeadersMiddleware
 from backend.routers import assessment, controls, evidence, reports
 
 load_dotenv()
+
+# Centralized logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("backend")
 
 
 @asynccontextmanager
@@ -39,13 +50,47 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CMMC Compliance Platform",
     description="""AI-powered CMMC 2.0 compliance automation platform.
-    
-    Exposes CMMC controls, evidence management, assessment scoring, and 
+
+    Exposes CMMC controls, evidence management, assessment scoring, and
     SSP/POAM generation via both REST API and MCP protocol for AI agent access.
     """,
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+# ─── Global Exception Handler ──────────────────────────────────────────────────
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """
+    Global exception handler to prevent sensitive information leakage.
+    Logs the full traceback but returns a generic message to the client.
+    """
+    # If it's a Starlette/FastAPI HTTPException, let it pass through to preserve 4xx responses
+    if isinstance(exc, StarletteHTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+        )
+
+    # If it's a validation error, let it pass through (usually 422)
+    if isinstance(exc, RequestValidationError):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.errors()},
+        )
+
+    # Log the full exception for internal debugging
+    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+
+    # Return a safe, generic error message to the client
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 
@@ -109,7 +154,11 @@ async def health_check():
 mcp = FastApiMCP(
     app,
     name="CMMC Compliance MCP",
-    description="MCP server for CMMC 2.0 compliance automation. Provides tools for control lookup, evidence collection, assessment scoring, SPRS calculation, and SSP/POAM generation.",
+    description=(
+        "MCP server for CMMC 2.0 compliance automation. "
+        "Provides tools for control lookup, evidence collection, "
+        "assessment scoring, SPRS calculation, and SSP/POAM generation."
+    ),
 )
 
 mcp.mount()
