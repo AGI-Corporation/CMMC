@@ -49,9 +49,22 @@ async def list_controls(
     # Extract IDs to fetch only required assessments
     control_ids = [c.id for c in controls_data]
 
-    # Optimization: Use shared helper with ID filtering
+    # Optimization: Use shared helper with ID filtering and selective column fetching
     assessments_map = (
-        await get_latest_assessments(db, control_ids=control_ids) if control_ids else {}
+        await get_latest_assessments(
+            db,
+            control_ids=control_ids,
+            columns=[
+                AssessmentRecord.control_id,
+                AssessmentRecord.status,
+                AssessmentRecord.evidence_ids,
+                AssessmentRecord.notes,
+                AssessmentRecord.confidence,
+                AssessmentRecord.poam_required,
+            ],
+        )
+        if control_ids
+        else {}
     )
 
     responses = []
