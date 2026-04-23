@@ -63,10 +63,27 @@ async def generate_ssp(
     Includes: system overview, control family summaries, implementation status.
     """
     # Fetch latest assessments
-    assessments_dict = await get_latest_assessments(db)
+    # Performance Optimization: Selective column fetching
+    assessments_dict = await get_latest_assessments(
+        db,
+        columns=[
+            AssessmentRecord.control_id,
+            AssessmentRecord.status,
+            AssessmentRecord.confidence,
+            AssessmentRecord.notes,
+            AssessmentRecord.evidence_ids,
+        ],
+    )
     assessments = list(assessments_dict.values())
-    controls_result = await db.execute(select(ControlRecord))
-    controls = {c.id: c for c in controls_result.scalars().all()}
+    controls_result = await db.execute(
+        select(
+            ControlRecord.id,
+            ControlRecord.title,
+            ControlRecord.domain,
+            ControlRecord.level,
+        )
+    )
+    controls = {c.id: c for c in controls_result.all()}
 
     # Count by status
     status_counts = {
@@ -196,10 +213,27 @@ async def generate_poam(
     Generate a Plan of Action & Milestones (POA&M) as CSV.
     Includes all partial and not_implemented controls.
     """
-    assessments_dict = await get_latest_assessments(db)
+    # Performance Optimization: Selective column fetching
+    assessments_dict = await get_latest_assessments(
+        db,
+        columns=[
+            AssessmentRecord.control_id,
+            AssessmentRecord.status,
+            AssessmentRecord.confidence,
+            AssessmentRecord.next_review,
+            AssessmentRecord.assessor,
+            AssessmentRecord.notes,
+        ],
+    )
     assessments = list(assessments_dict.values())
-    controls_result = await db.execute(select(ControlRecord))
-    controls = {c.id: c for c in controls_result.scalars().all()}
+    controls_result = await db.execute(
+        select(
+            ControlRecord.id,
+            ControlRecord.title,
+            ControlRecord.zt_pillar,
+        )
+    )
+    controls = {c.id: c for c in controls_result.all()}
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -259,7 +293,10 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Return compliance posture summary for dashboard rendering."""
-    assessments_dict = await get_latest_assessments(db)
+    # Performance Optimization: Selective column fetching
+    assessments_dict = await get_latest_assessments(
+        db, columns=[AssessmentRecord.control_id, AssessmentRecord.status]
+    )
     assessments = list(assessments_dict.values())
 
     status_counts = {
