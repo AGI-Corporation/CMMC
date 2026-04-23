@@ -7,3 +7,8 @@
 **Vulnerability:** Not a direct security vulnerability, but an environmental instability. The `requirements.txt` allowed `mistralai>=1.1.0`, which pulled in version 2.x.
 **Learning:** MistralAI 2.x introduces breaking changes in the client import structure (`from mistralai import Mistral` fails if not using the new client correctly or if expecting the old one). This caused the entire application (including security tests) to fail on startup.
 **Prevention:** Pin critical dependencies like `mistralai==1.1.0` in `requirements.txt` to ensure consistent behavior across development and CI environments, especially when using agents that rely on specific API structures.
+
+## 2026-05-20 - Fix CWE-209 Information Exposure in Mistral Agent
+**Vulnerability:** The API endpoints in the Mistral agent exposed internal stack traces and raw error messages via `str(e)` in HTTP 500 responses.
+**Learning:** In FastAPI, directly passing exception strings to HTTPException details can leak sensitive backend structure or data to clients.
+**Prevention:** Always log full exceptions internally using `logging.error(..., exc_info=True)` and return generic error messages to the client.
