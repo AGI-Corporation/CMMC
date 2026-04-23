@@ -8,12 +8,15 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
 
 from agents.devsecops_agent import agent as devsecops
@@ -39,8 +42,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CMMC Compliance Platform",
     description="""AI-powered CMMC 2.0 compliance automation platform.
-    
-    Exposes CMMC controls, evidence management, assessment scoring, and 
+
+    Exposes CMMC controls, evidence management, assessment scoring, and
     SSP/POAM generation via both REST API and MCP protocol for AI agent access.
     """,
     version="1.0.0",
@@ -63,6 +66,42 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+# ─── Error Handling ──────────────────────────────────────────────────────────
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler to prevent sensitive information leakage.
+    Logs the full traceback but returns a generic message to the client.
+    """
+    # Preserve standard FastAPI 4xx responses
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+        )
+    if isinstance(exc, RequestValidationError):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.errors()},
+        )
+
+    # Log the full exception with traceback for debugging
+    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+
+    # Return a generic error message to the client
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
@@ -109,7 +148,8 @@ async def health_check():
 mcp = FastApiMCP(
     app,
     name="CMMC Compliance MCP",
-    description="MCP server for CMMC 2.0 compliance automation. Provides tools for control lookup, evidence collection, assessment scoring, SPRS calculation, and SSP/POAM generation.",
+    description="MCP server for CMMC 2.0 compliance automation. Provides tools for control lookup, "
+    "evidence collection, assessment scoring, SPRS calculation, and SSP/POAM generation.",
 )
 
 mcp.mount()

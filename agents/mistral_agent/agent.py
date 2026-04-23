@@ -13,6 +13,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
+from fastapi import APIRouter, Depends, HTTPException
 from mistralai import Mistral
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -145,7 +146,7 @@ class MistralComplianceAgent:
         ZT Pillar: {zt_pillar}
         Current Status: {current_status}
         Existing Evidence: {json.dumps(existing_evidence)}
-        
+
         Analyze this control for compliance gaps and provide remediation guidance."""
 
         result = await self._chat(system, user)
@@ -196,7 +197,7 @@ class MistralComplianceAgent:
         """
         user = f"""Language: {language}
         Relevant Controls: {json.dumps(relevant_controls or [])}
-        
+
         Code to analyze:
         ```{language}
         {code_snippet}
@@ -271,7 +272,6 @@ class MistralComplianceAgent:
 
 
 # ─── FastAPI router for Mistral agent endpoints ────────────────────────────────
-from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter()
 agent = MistralComplianceAgent()
@@ -317,8 +317,9 @@ async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_d
             "analysis": result,
             "model": MISTRAL_MODEL,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        # Generic error message to prevent leakage; details logged by global handler
+        raise HTTPException(status_code=500, detail="Mistral agent analysis failed")
 
 
 @router.post("/code-review", summary="DevSecOps code security analysis with Codestral")
@@ -332,8 +333,9 @@ async def code_review(req: CodeReviewRequest, db: AsyncSession = Depends(get_db)
             db, "manual", "Code Review", req.relevant_controls or [], result
         )
         return {"analysis": result, "model": MISTRAL_CODE_MODEL}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        # Generic error message to prevent leakage; details logged by global handler
+        raise HTTPException(status_code=500, detail="Mistral agent code review failed")
 
 
 @router.post("/ask", summary="Ask a CMMC/ZT compliance question")
@@ -342,5 +344,6 @@ async def ask_question(req: QuestionRequest):
     try:
         answer = await agent.answer_compliance_question(req.question, req.context)
         return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        # Generic error message to prevent leakage; details logged by global handler
+        raise HTTPException(status_code=500, detail="Mistral agent failed to process question")
