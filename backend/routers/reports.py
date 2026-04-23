@@ -8,17 +8,14 @@ from the current assessment state. Output formats: Markdown, JSON, CSV.
 
 import csv
 import io
-import json
 from datetime import UTC, date, datetime
-from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (AssessmentRecord, ControlRecord,
-                                 EvidenceRecord, get_db,
+from backend.db.database import (AssessmentRecord, ControlRecord, get_db,
                                  get_latest_assessments)
 
 router = APIRouter()
@@ -110,14 +107,6 @@ async def generate_ssp(
         status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5
     )
     sprs_estimate = max(-203, round(sprs_estimate, 0))
-
-    total_controls_count = len(controls)
-    compliance_pct = (
-        (status_counts["implemented"] / total_controls_count * 100)
-        if total_controls_count > 0
-        else 0
-    )
-    progress_bar = get_progress_bar(compliance_pct)
 
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
