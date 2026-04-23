@@ -73,3 +73,25 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+
+@pytest.mark.anyio
+async def test_ssp_zt_pillar_alignment_ux():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/ssp")
+        assert resp.status_code == 200
+        content = resp.text
+
+        # Check for the ZT Pillar Alignment table headers
+        assert "### Zero Trust Pillar Alignment" in content
+        assert "| ZT Pillar | CMMC Domains | Status |" in content
+
+        # Check for specific pillars and their progress bars (using sample data)
+        # AC.1.001 (implemented) and AC.1.002 (partial) are both in User (AC, IA, PS)
+        # User pillar should have a progress bar and percentage
+        assert "| User | AC, IA, PS |" in content
+        # With 1 implemented and 1 partial, score is (1 + 0.5) / 2 = 75%
+        assert "75.0%" in content
+        assert "█" in content  # Progress bar should be present
