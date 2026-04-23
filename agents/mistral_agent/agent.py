@@ -13,6 +13,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
+from fastapi import APIRouter, Depends, HTTPException
 from mistralai import Mistral
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -145,7 +146,7 @@ class MistralComplianceAgent:
         ZT Pillar: {zt_pillar}
         Current Status: {current_status}
         Existing Evidence: {json.dumps(existing_evidence)}
-        
+
         Analyze this control for compliance gaps and provide remediation guidance."""
 
         result = await self._chat(system, user)
@@ -196,7 +197,7 @@ class MistralComplianceAgent:
         """
         user = f"""Language: {language}
         Relevant Controls: {json.dumps(relevant_controls or [])}
-        
+
         Code to analyze:
         ```{language}
         {code_snippet}
@@ -271,7 +272,6 @@ class MistralComplianceAgent:
 
 
 # ─── FastAPI router for Mistral agent endpoints ────────────────────────────────
-from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter()
 agent = MistralComplianceAgent()

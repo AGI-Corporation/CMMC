@@ -1,14 +1,16 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from backend.main import app
+
 
 @pytest.mark.anyio
 async def test_error_leakage_mistral():
     """
     Verify that the Mistral agent endpoint leaks exception details.
     """
-    with patch("agents.mistral_agent.agent.agent.analyze_gap", side_effect=Exception("SENSITIVE DATABASE ERROR: user_id=123, password=secret")):
+    sensitive_msg = "SENSITIVE DATABASE ERROR: user_id=123, password=secret"
+    with patch("agents.mistral_agent.agent.agent.analyze_gap", side_effect=Exception(sensitive_msg)):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as ac:
@@ -23,6 +25,7 @@ async def test_error_leakage_mistral():
         # If it is fixed, the sensitive message will NOT be in the detail field
         assert "SENSITIVE DATABASE ERROR" not in response.json()["detail"]
         assert response.json()["detail"] == "Mistral agent analysis failed"
+
 
 @pytest.mark.anyio
 async def test_http_exception_not_swallowed():
