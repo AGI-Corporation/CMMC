@@ -66,9 +66,7 @@ def get_confidence_stars(confidence: float) -> str:
 def get_maturity_pct(assessments: List[AssessmentRecord], domains: List[str]) -> float:
     """Calculate maturity percentage for a set of domains with 0.5 partial weighting."""
     relevant = [
-        a
-        for a in assessments
-        if any(a.control_id.startswith(f"{d}.") for d in domains)
+        a for a in assessments if any(a.control_id.startswith(f"{d}.") for d in domains)
     ]
     if not relevant:
         return 0.0
@@ -167,7 +165,9 @@ async def generate_ssp(
 
     for pillar, domains in ZT_PILLAR_DOMAINS.items():
         maturity_pct = get_maturity_pct(assessments, domains)
-        ssp += f"| {pillar} | {', '.join(domains)} | {get_progress_bar(maturity_pct)} |\n"
+        ssp += (
+            f"| {pillar} | {', '.join(domains)} | {get_progress_bar(maturity_pct)} |\n"
+        )
 
     ssp += """
 ## 3. Assessment Findings
@@ -320,7 +320,11 @@ async def get_dashboard(
             round(implemented / total_controls * 100, 1) if total_controls else 0
         ),
         "zt_pillars": [
-            {"pillar": p, "domains": d, "maturity_pct": round(get_maturity_pct(assessments, d), 1)}
+            {
+                "pillar": p,
+                "domains": d,
+                "maturity_pct": round(get_maturity_pct(assessments, d), 1),
+            }
             for p, d in ZT_PILLAR_DOMAINS.items()
         ],
         "agents": [
