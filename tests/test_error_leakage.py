@@ -6,8 +6,7 @@ from backend.main import app
 @pytest.mark.anyio
 async def test_error_leakage_gap_analysis():
     """
-    Verify that an exception in the agent router leaks the error message.
-    (This test should fail to show generic error once the fix is applied)
+    Verify that an exception in the agent router is caught and redacted.
     """
     with patch("agents.mistral_agent.agent.agent.analyze_gap") as mock_analyze:
         mock_analyze.side_effect = Exception("Sensitive database connection string leaked!")
@@ -53,10 +52,6 @@ async def test_unhandled_exception_leakage():
     Verify that a completely unhandled exception (not caught by router)
     is caught by the global handler and redacted.
     """
-    # We need an endpoint that doesn't have a try-except wrapping everything
-    # or we can mock one of the database calls in a router that doesn't have try-except.
-    # Looking at backend/routers/evidence.py, create_evidence doesn't have a try-except.
-
     with patch("backend.routers.evidence.EvidenceRecord", side_effect=RuntimeError("Raw DB Error!")):
         async with AsyncClient(
             transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
