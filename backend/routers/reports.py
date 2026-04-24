@@ -8,18 +8,14 @@ from the current assessment state. Output formats: Markdown, JSON, CSV.
 
 import csv
 import io
-import json
 from datetime import UTC, date, datetime
-from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (AssessmentRecord, ControlRecord,
-                                 EvidenceRecord, get_db,
-                                 get_latest_assessments)
+from backend.db.database import ControlRecord, get_db, get_latest_assessments, AssessmentRecord
 
 router = APIRouter()
 
@@ -106,21 +102,13 @@ async def generate_ssp(
     )
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
-    total_controls_count = len(controls)
-    compliance_pct = (
-        (status_counts["implemented"] / total_controls_count * 100)
-        if total_controls_count > 0
-        else 0
-    )
-    progress_bar = get_progress_bar(compliance_pct)
-
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
 
-**Classification:** {classification}  
+**Classification:** {classification}
 **Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
-**Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2  
-**SPRS Score Estimate:** {sprs_estimate}  
+**Framework:** CMMC 2.0 Level 2 / NIST SP 800-171 Rev 2
+**SPRS Score Estimate:** {sprs_estimate}
 **Overall Compliance:** {get_progress_bar(implemented_pct)}
 
 ---
@@ -275,7 +263,9 @@ async def generate_poam(
         content=csv_content,
         media_type="text/csv",
         headers={
-            "Content-Disposition": f'attachment; filename="poam_{system_name.replace(" ","_")}.csv"'
+            "Content-Disposition": (
+                f'attachment; filename="poam_{system_name.replace(" ", "_")}.csv"'
+            )
         },
     )
 
