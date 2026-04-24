@@ -6,6 +6,7 @@ AGI Corporation CMMC Platform 2026
 import json
 import os
 from datetime import UTC, datetime
+from typing import List, Optional
 
 from sqlalchemy import (JSON, Column, DateTime, Float, Index, Integer, String,
                         Text, func, select)
@@ -137,7 +138,7 @@ async def get_db():
             await session.close()
 
 
-async def get_latest_assessments(db: AsyncSession, control_ids: list[str] = None):
+async def get_latest_assessments(db: AsyncSession, control_ids: Optional[List[str]] = None):
     """
     Shared helper to fetch the latest AssessmentRecord for each control.
     Optionally filtered by a list of control_ids for better performance.
