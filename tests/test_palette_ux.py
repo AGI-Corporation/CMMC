@@ -73,3 +73,9 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+        # Check for Zero Trust pillar maturity progress bars
+        assert "| User | AC, IA, PS |" in content
+        assert "| Device | CM, MA, PE |" in content
+        # Check that it's no longer "See assessment"
+        assert "See assessment" not in content
