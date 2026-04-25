@@ -145,7 +145,7 @@ class MistralComplianceAgent:
         ZT Pillar: {zt_pillar}
         Current Status: {current_status}
         Existing Evidence: {json.dumps(existing_evidence)}
-        
+
         Analyze this control for compliance gaps and provide remediation guidance."""
 
         result = await self._chat(system, user)
@@ -196,7 +196,7 @@ class MistralComplianceAgent:
         """
         user = f"""Language: {language}
         Relevant Controls: {json.dumps(relevant_controls or [])}
-        
+
         Code to analyze:
         ```{language}
         {code_snippet}
@@ -300,47 +300,38 @@ class QuestionRequest(BaseModel):
 @router.post("/gap-analysis", summary="Analyze CMMC control gap with Mistral AI")
 async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_db)):
     """Use Mistral to analyze a compliance gap and return remediation steps."""
-    try:
-        result = await agent.analyze_gap(
-            req.control_id,
-            req.control_title,
-            req.control_description,
-            req.zt_pillar,
-            req.current_status,
-            req.existing_evidence,
-        )
-        await agent.record_run(
-            db, "manual", f"Gap Analysis: {req.control_id}", [req.control_id], result
-        )
-        return {
-            "control_id": req.control_id,
-            "analysis": result,
-            "model": MISTRAL_MODEL,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await agent.analyze_gap(
+        req.control_id,
+        req.control_title,
+        req.control_description,
+        req.zt_pillar,
+        req.current_status,
+        req.existing_evidence,
+    )
+    await agent.record_run(
+        db, "manual", f"Gap Analysis: {req.control_id}", [req.control_id], result
+    )
+    return {
+        "control_id": req.control_id,
+        "analysis": result,
+        "model": MISTRAL_MODEL,
+    }
 
 
 @router.post("/code-review", summary="DevSecOps code security analysis with Codestral")
 async def code_review(req: CodeReviewRequest, db: AsyncSession = Depends(get_db)):
     """Use Codestral to analyze code for CMMC-mapped security issues."""
-    try:
-        result = await agent.analyze_code_security(
-            req.code_snippet, req.language, req.relevant_controls
-        )
-        await agent.record_run(
-            db, "manual", "Code Review", req.relevant_controls or [], result
-        )
-        return {"analysis": result, "model": MISTRAL_CODE_MODEL}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = await agent.analyze_code_security(
+        req.code_snippet, req.language, req.relevant_controls
+    )
+    await agent.record_run(
+        db, "manual", "Code Review", req.relevant_controls or [], result
+    )
+    return {"analysis": result, "model": MISTRAL_CODE_MODEL}
 
 
 @router.post("/ask", summary="Ask a CMMC/ZT compliance question")
 async def ask_question(req: QuestionRequest):
     """Natural language CMMC compliance Q&A powered by Mistral."""
-    try:
-        answer = await agent.answer_compliance_question(req.question, req.context)
-        return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    answer = await agent.answer_compliance_question(req.question, req.context)
+    return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
