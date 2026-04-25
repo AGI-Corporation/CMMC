@@ -52,8 +52,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CMMC Compliance Platform",
     description="""AI-powered CMMC 2.0 compliance automation platform.
-    
-    Exposes CMMC controls, evidence management, assessment scoring, and 
+
+    Exposes CMMC controls, evidence management, assessment scoring, and
     SSP/POAM generation via both REST API and MCP protocol for AI agent access.
     """,
     version="1.0.0",
@@ -150,7 +150,9 @@ async def health_check():
 mcp = FastApiMCP(
     app,
     name="CMMC Compliance MCP",
-    description="MCP server for CMMC 2.0 compliance automation. Provides tools for control lookup, evidence collection, assessment scoring, SPRS calculation, and SSP/POAM generation.",
+    description="MCP server for CMMC 2.0 compliance automation. Provides tools for "
+                "control lookup, evidence collection, assessment scoring, SPRS "
+                "calculation, and SSP/POAM generation.",
 )
 
 mcp.mount()

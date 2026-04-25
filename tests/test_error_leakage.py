@@ -3,6 +3,7 @@ from httpx import ASGITransport, AsyncClient
 from unittest.mock import patch
 from backend.main import app
 
+
 @pytest.mark.anyio
 async def test_mistral_error_leakage():
     """
@@ -31,6 +32,7 @@ async def test_mistral_error_leakage():
         # Should contain a generic error message
         assert "Internal server error" in response.text or "detail" in response.json()
 
+
 @pytest.mark.anyio
 async def test_404_not_masked():
     """
@@ -43,6 +45,7 @@ async def test_404_not_masked():
         response = await ac.get("/api/non-existent-endpoint")
 
     assert response.status_code == 404
+
 
 @pytest.mark.anyio
 async def test_validation_error_not_masked():
