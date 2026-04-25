@@ -9,7 +9,6 @@ agents, aggregates evidence, and generates unified compliance scorecards.
 Aligns with DoD ZT Orchestration/Automation pillar and Fulcrum LOE 3/4.
 """
 
-import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -17,7 +16,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.database import (AgentRunRecord, AssessmentRecord,
