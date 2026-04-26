@@ -8,13 +8,16 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from agents.devsecops_agent import agent as devsecops
 from agents.icam_agent import agent as icam
@@ -25,6 +28,12 @@ from backend.middleware.security import SecurityHeadersMiddleware
 from backend.routers import assessment, controls, evidence, reports
 
 load_dotenv()
+
+# Centralized Logging Configuration
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -63,6 +72,34 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# ─── Global Exception Handler ─────────────────────────────────────────────────
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catch-all exception handler to prevent sensitive information leakage.
+    Logs the full stack trace internally and returns a generic 500 error.
+    """
+    # Log the full exception with traceback for internal debugging
+    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True)
+
+    # Preserve standard FastAPI/Starlette HTTP exceptions if they are 4xx
+    if isinstance(exc, StarletteHTTPException):
+        if exc.status_code < 500:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+            )
+
+    # Return a generic error message for all 500s and unhandled exceptions
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
