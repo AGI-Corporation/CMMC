@@ -121,7 +121,8 @@ async def generate_ssp(
     zt_pillar_rows = ""
     for pillar, domains in ZT_PILLAR_DOMAINS.items():
         pillar_assessments = [
-            a for a in assessments
+            a
+            for a in assessments
             if any(a.control_id.startswith(dom + ".") for dom in domains)
         ]
         maturity = get_maturity_pct(pillar_assessments)
