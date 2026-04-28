@@ -73,3 +73,15 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+        # Check for Palette UX Enhancements
+        # 1. Back to Top links
+        assert "[↑ Back to Top](#system-security-plan-ssp)" in content
+        assert content.count("[↑ Back to Top](#system-security-plan-ssp)") >= 3
+
+        # 2. Dynamic findings count (2 assessments added in fixture)
+        assert "Showing 2 of 2 assessment findings" in content
+
+        # 3. ZT Pillar progress bars (should be present now)
+        assert "| User | AC, IA, PS |" in content
+        assert "█" in content  # Progress bar character
