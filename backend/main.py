@@ -14,6 +14,10 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import (
+    http_exception_handler as fastapi_http_exception_handler,
+    request_validation_exception_handler as fastapi_validation_exception_handler,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -81,20 +85,19 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    """Pass-through for HTTP exceptions, ensuring they aren't masked as 500s."""
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-    )
+    """
+    Pass-through for HTTP exceptions, ensuring they aren't masked as 500s.
+    Logs the detail at INFO level for server-side visibility.
+    """
+    logger.info(f"HTTP exception: {exc.detail}")
+    return await fastapi_http_exception_handler(request, exc)
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Pass-through for validation errors."""
-    return JSONResponse(
-        status_code=422,
-        content={"detail": exc.errors()},
-    )
+    """Pass-through for validation errors with logging."""
+    logger.info(f"Validation error: {exc.errors()}")
+    return await fastapi_validation_exception_handler(request, exc)
 
 
 @app.exception_handler(Exception)
