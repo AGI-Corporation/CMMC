@@ -68,8 +68,7 @@ def get_maturity_pct(assessments: List[AssessmentRecord], domains: List[str]) ->
     relevant = [
         a
         for a in assessments
-        if any(a.control_id.startswith(d + ".") for d in domains)
-        and a.status != "na"
+        if any(a.control_id.startswith(d + ".") for d in domains) and a.status != "na"
     ]
     if not relevant:
         return 0.0
@@ -179,7 +178,9 @@ async def generate_ssp(
 """
     for pillar, domains in ZT_PILLAR_DOMAINS.items():
         maturity_pct = get_maturity_pct(assessments, domains)
-        ssp += f"| {pillar} | {', '.join(domains)} | {get_progress_bar(maturity_pct)} |\n"
+        ssp += (
+            f"| {pillar} | {', '.join(domains)} | {get_progress_bar(maturity_pct)} |\n"
+        )
 
     ssp += f"""
 [↑ Back to Top](#system-security-plan-ssp)
