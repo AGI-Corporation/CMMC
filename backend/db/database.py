@@ -137,10 +137,13 @@ async def get_db():
             await session.close()
 
 
-async def get_latest_assessments(db: AsyncSession, control_ids: list[str] = None):
+async def get_latest_assessments(
+    db: AsyncSession, control_ids: list[str] = None, columns: list = None
+):
     """
     Shared helper to fetch the latest AssessmentRecord for each control.
     Optionally filtered by a list of control_ids for better performance.
+    Optionally requests only specific columns for efficiency.
     """
     sub_q = select(
         AssessmentRecord.control_id,
@@ -152,11 +155,26 @@ async def get_latest_assessments(db: AsyncSession, control_ids: list[str] = None
 
     sub_q = sub_q.subquery()
 
-    query = select(AssessmentRecord).join(
-        sub_q,
-        (AssessmentRecord.control_id == sub_q.c.control_id)
-        & (AssessmentRecord.assessment_date == sub_q.c.max_date),
-    )
+    if columns:
+        # Ensure control_id is included for mapping
+        actual_columns = list(columns)
+        if AssessmentRecord.control_id not in actual_columns:
+            actual_columns.append(AssessmentRecord.control_id)
 
-    result = await db.execute(query)
-    return {a.control_id: a for a in result.scalars().all()}
+        query = select(*actual_columns).join(
+            sub_q,
+            (AssessmentRecord.control_id == sub_q.c.control_id)
+            & (AssessmentRecord.assessment_date == sub_q.c.max_date),
+        )
+        result = await db.execute(query)
+        # Returns SQLAlchemy Row objects
+        return {a.control_id: a for a in result.all()}
+    else:
+        query = select(AssessmentRecord).join(
+            sub_q,
+            (AssessmentRecord.control_id == sub_q.c.control_id)
+            & (AssessmentRecord.assessment_date == sub_q.c.max_date),
+        )
+        result = await db.execute(query)
+        # Returns full AssessmentRecord objects
+        return {a.control_id: a for a in result.scalars().all()}
