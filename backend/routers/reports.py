@@ -9,6 +9,7 @@ from the current assessment state. Output formats: Markdown, JSON, CSV.
 import csv
 import io
 import json
+import re
 from datetime import UTC, date, datetime
 from typing import Any, Dict, List
 
@@ -245,12 +246,14 @@ async def generate_poam(
             )
 
     csv_content = output.getvalue()
+
+    # Sanitize system_name to prevent HTTP Header Injection / path traversal
+    safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", system_name)
+
     return PlainTextResponse(
         content=csv_content,
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="poam_{system_name.replace(" ","_")}.csv"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="poam_{safe_name}.csv"'},
     )
 
 
