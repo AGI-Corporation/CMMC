@@ -78,10 +78,18 @@ class SPRSResult(BaseModel):
     description="Get overall CMMC compliance posture summary including implementation percentages, SPRS score, and breakdown by domain and level.",
 )
 async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(ControlRecord))
-    controls = result.scalars().all()
+    # Performance Optimization: Fetch only required columns for summary calculation
+    ctrl_cols = [
+        ControlRecord.id,
+        ControlRecord.domain,
+        ControlRecord.level,
+        ControlRecord.score_value,
+    ]
+    result = await db.execute(select(*ctrl_cols))
+    controls = result.all()
 
-    assessments_map = await get_latest_assessments(db)
+    ass_cols = [AssessmentRecord.control_id, AssessmentRecord.status]
+    assessments_map = await get_latest_assessments(db, columns=ass_cols)
 
     by_domain = {}
     by_level = {
@@ -157,10 +165,13 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     description="Calculate the DoD Supplier Performance Risk System (SPRS) score based on current control implementation status. Score ranges from -203 to 110.",
 )
 async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(ControlRecord))
-    controls = result.scalars().all()
+    # Performance Optimization: Fetch only required columns for SPRS calculation
+    ctrl_cols = [ControlRecord.id, ControlRecord.score_value]
+    result = await db.execute(select(*ctrl_cols))
+    controls = result.all()
 
-    assessments_map = await get_latest_assessments(db)
+    ass_cols = [AssessmentRecord.control_id, AssessmentRecord.status]
+    assessments_map = await get_latest_assessments(db, columns=ass_cols)
 
     sprs = 110
     deductions_list = []

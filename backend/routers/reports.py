@@ -62,11 +62,20 @@ async def generate_ssp(
     Generate a NIST SP 800-171 / CMMC 2.0 SSP in Markdown format.
     Includes: system overview, control family summaries, implementation status.
     """
-    # Fetch latest assessments
-    assessments_dict = await get_latest_assessments(db)
+    # Performance Optimization: Fetch only required columns for SSP report
+    ass_cols = [
+        AssessmentRecord.control_id,
+        AssessmentRecord.status,
+        AssessmentRecord.confidence,
+        AssessmentRecord.notes,
+        AssessmentRecord.evidence_ids,
+    ]
+    assessments_dict = await get_latest_assessments(db, columns=ass_cols)
     assessments = list(assessments_dict.values())
-    controls_result = await db.execute(select(ControlRecord))
-    controls = {c.id: c for c in controls_result.scalars().all()}
+
+    ctrl_cols = [ControlRecord.id, ControlRecord.title]
+    controls_result = await db.execute(select(*ctrl_cols))
+    controls = {c.id: c for c in controls_result.all()}
 
     # Count by status
     status_counts = {
@@ -196,10 +205,21 @@ async def generate_poam(
     Generate a Plan of Action & Milestones (POA&M) as CSV.
     Includes all partial and not_implemented controls.
     """
-    assessments_dict = await get_latest_assessments(db)
+    # Performance Optimization: Fetch only required columns for POA&M
+    ass_cols = [
+        AssessmentRecord.control_id,
+        AssessmentRecord.status,
+        AssessmentRecord.confidence,
+        AssessmentRecord.next_review,
+        AssessmentRecord.assessor,
+        AssessmentRecord.notes,
+    ]
+    assessments_dict = await get_latest_assessments(db, columns=ass_cols)
     assessments = list(assessments_dict.values())
-    controls_result = await db.execute(select(ControlRecord))
-    controls = {c.id: c for c in controls_result.scalars().all()}
+
+    ctrl_cols = [ControlRecord.id, ControlRecord.title, ControlRecord.zt_pillar]
+    controls_result = await db.execute(select(*ctrl_cols))
+    controls = {c.id: c for c in controls_result.all()}
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -259,7 +279,9 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Return compliance posture summary for dashboard rendering."""
-    assessments_dict = await get_latest_assessments(db)
+    # Performance Optimization: Only status needed for dashboard counts
+    ass_cols = [AssessmentRecord.control_id, AssessmentRecord.status]
+    assessments_dict = await get_latest_assessments(db, columns=ass_cols)
     assessments = list(assessments_dict.values())
 
     status_counts = {
