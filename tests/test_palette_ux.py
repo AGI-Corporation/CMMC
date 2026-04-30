@@ -73,3 +73,33 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+        # Check for UX improvements: Back to Top links
+        assert "[↑ Back to Top](#system-security-plan-ssp)" in content
+        assert content.count("[↑ Back to Top](#system-security-plan-ssp)") >= 2
+
+        # Check for UX improvements: Pillar alignment progress bars
+        assert "Zero Trust Pillar Alignment" in content
+        assert "| User | AC, IA, PS |" in content
+        assert "█" in content or "░" in content
+
+        # Check for UX improvements: Showing X of Y findings
+        assert "Showing" in content and "findings" in content
+
+
+@pytest.mark.anyio
+async def test_dashboard_consistency():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/dashboard")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert "zt_pillars" in data
+        assert len(data["zt_pillars"]) == 7
+        for pillar in data["zt_pillars"]:
+            assert "pillar" in pillar
+            assert "domains" in pillar
+            assert "progress" in pillar
+            assert isinstance(pillar["progress"], (int, float))
