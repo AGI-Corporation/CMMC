@@ -9,3 +9,7 @@ This journal tracks critical UX and accessibility learnings for the CMMC Complia
 ## 2026-03-27 - Visual Scannability in Markdown Reports
 **Learning:** Dense text reports like the System Security Plan (SSP) are difficult to scan for high-level status. Using familiar visual metaphors like emojis (✅/🟡/🛑), star ratings (⭐⭐⭐), and block-based progress bars (█░) significantly improves information density and "at-a-glance" comprehension in non-interactive formats like Markdown.
 **Action:** Always consider adding visual markers (emojis, progress bars) to text-based reports to highlight critical status and progress metrics.
+
+## 2026-03-28 - Centralized Compliance Mappings
+**Learning:** In systems with multiple report formats (Markdown, CSV, JSON Dashboard), centralizing the mapping of security controls to higher-level pillars (like Zero Trust) is critical for UX trust. Users expect the "Overall Compliance" in an SSP to exactly match the "Maturity" in a dashboard.
+**Action:** Always store domain-to-pillar mappings and compliance calculation logic in a single source of truth to ensure data consistency across all user-facing interfaces.
