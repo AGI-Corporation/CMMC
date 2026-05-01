@@ -1,12 +1,15 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
-from backend.main import app
-from backend.db.database import init_db
 from unittest.mock import patch
+
+from backend.db.database import init_db
+from backend.main import app
+
 
 @pytest.fixture(scope="module", autouse=True)
 async def setup_db():
     await init_db()
+
 
 @pytest.mark.anyio
 async def test_error_leakage_mistral_gap_analysis():
@@ -31,6 +34,7 @@ async def test_error_leakage_mistral_gap_analysis():
     # It should return a generic message
     assert response.json()["detail"] == "Internal server error"
 
+
 @pytest.mark.anyio
 async def test_http_exception_not_swallowed():
     """
@@ -42,6 +46,7 @@ async def test_http_exception_not_swallowed():
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Control NON_EXISTENT_CONTROL not found"
+
 
 @pytest.mark.anyio
 async def test_validation_exception_preserved():
