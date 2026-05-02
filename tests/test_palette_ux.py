@@ -73,3 +73,9 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+        # Check for new Palette UX elements
+        assert "Zero Trust Pillar Alignment" in content
+        assert "Progress" in content
+        assert "[Back to Top](#system-security-plan-ssp)" in content
+        assert "Showing" in content and "latest assessments" in content
