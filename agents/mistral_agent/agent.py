@@ -271,6 +271,8 @@ class MistralComplianceAgent:
 
 
 # ─── FastAPI router for Mistral agent endpoints ────────────────────────────────
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter()
@@ -318,7 +320,11 @@ async def gap_analysis(req: GapAnalysisRequest, db: AsyncSession = Depends(get_d
             "model": MISTRAL_MODEL,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error("Error during gap analysis: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred while processing the request.",
+        )
 
 
 @router.post("/code-review", summary="DevSecOps code security analysis with Codestral")
@@ -333,7 +339,11 @@ async def code_review(req: CodeReviewRequest, db: AsyncSession = Depends(get_db)
         )
         return {"analysis": result, "model": MISTRAL_CODE_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error("Error during code review analysis: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred while processing the request.",
+        )
 
 
 @router.post("/ask", summary="Ask a CMMC/ZT compliance question")
@@ -343,4 +353,8 @@ async def ask_question(req: QuestionRequest):
         answer = await agent.answer_compliance_question(req.question, req.context)
         return {"question": req.question, "answer": answer, "model": MISTRAL_MODEL}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error("Error answering compliance question: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred while processing the request.",
+        )
