@@ -176,10 +176,14 @@ async def generate_ssp(
 
     for pillar, domains in ZT_PILLAR_DOMAINS.items():
         pillar_assessments = [
-            a for a in assessments if any(a.control_id.startswith(f"{d}.") for d in domains)
+            a
+            for a in assessments
+            if any(a.control_id.startswith(f"{d}.") for d in domains)
         ]
         maturity_pct = get_maturity_pct(pillar_assessments)
-        ssp += f"| {pillar} | {', '.join(domains)} | {get_progress_bar(maturity_pct)} |\n"
+        ssp += (
+            f"| {pillar} | {', '.join(domains)} | {get_progress_bar(maturity_pct)} |\n"
+        )
 
     ssp += f"""
 [Back to Top](#system-security-plan-ssp)
