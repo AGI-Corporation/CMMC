@@ -23,6 +23,33 @@ from backend.db.database import (AssessmentRecord, ControlRecord,
 
 router = APIRouter()
 
+ZT_PILLAR_DOMAINS = {
+    "User": ["AC", "IA", "PS"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA"],
+}
+
+
+def get_maturity_pct(assessments: List[AssessmentRecord]) -> float:
+    """Calculate maturity percentage for a set of assessments (implemented=1.0, partial=0.5, na=excluded)."""
+    valid_assessments = [a for a in assessments if a.status != "na"]
+    if not valid_assessments:
+        return 0.0
+
+    score = sum(
+        1.0
+        if a.status == "implemented"
+        else 0.5
+        if a.status in ["partial", "partially_implemented"]
+        else 0.0
+        for a in valid_assessments
+    )
+    return (score / len(valid_assessments)) * 100
+
 
 def get_status_emoji(status: str) -> str:
     """Map implementation status to a visual emoji for better scannability."""
@@ -94,13 +121,16 @@ async def generate_ssp(
     )
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
-    total_controls_count = len(controls)
-    compliance_pct = (
-        (status_counts["implemented"] / total_controls_count * 100)
-        if total_controls_count > 0
-        else 0
-    )
-    progress_bar = get_progress_bar(compliance_pct)
+    zt_rows = []
+    for pillar, domains in ZT_PILLAR_DOMAINS.items():
+        pillar_assessments = [
+            a for a in assessments
+            if any(a.control_id.startswith(f"{domain}.") for domain in domains)
+        ]
+        maturity = get_maturity_pct(pillar_assessments)
+        zt_rows.append(f"| {pillar} | {', '.join(domains)} | {get_progress_bar(maturity)} |")
+
+    zt_table = "\n".join(zt_rows)
 
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
@@ -142,13 +172,7 @@ async def generate_ssp(
 
 | ZT Pillar | CMMC Domains | Status |
 |-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
+{zt_table}
 
 ## 3. Assessment Findings
 
@@ -300,13 +324,8 @@ async def get_dashboard(
             round(implemented / total_controls * 100, 1) if total_controls else 0
         ),
         "zt_pillars": [
-            {"pillar": "User", "domains": ["AC", "IA", "PS"]},
-            {"pillar": "Device", "domains": ["CM", "MA", "PE"]},
-            {"pillar": "Network", "domains": ["SC", "AC"]},
-            {"pillar": "Application", "domains": ["CM", "CA", "SI"]},
-            {"pillar": "Data", "domains": ["MP", "SC", "AU"]},
-            {"pillar": "Visibility & Analytics", "domains": ["AU", "IR", "RA"]},
-            {"pillar": "Automation & Orchestration", "domains": ["IR", "SI", "CA"]},
+            {"pillar": pillar, "domains": domains}
+            for pillar, domains in ZT_PILLAR_DOMAINS.items()
         ],
         "agents": [
             {"name": "orchestrator", "endpoint": "/api/orchestrator"},

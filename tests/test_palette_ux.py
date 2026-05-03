@@ -73,3 +73,22 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+
+@pytest.mark.anyio
+async def test_zt_pillar_progress_bars():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/ssp")
+        assert resp.status_code == 200
+        content = resp.text
+
+        # Check for ZT Pillar table headers
+        assert "### Zero Trust Pillar Alignment" in content
+        assert "| ZT Pillar | CMMC Domains | Status |" in content
+
+        # Check that individual pillars have progress bars instead of "See assessment"
+        assert "| User | AC, IA, PS | `█" in content or "`░" in content
+        assert "| Device | CM, MA, PE | `█" in content or "`░" in content
+        assert "See assessment" not in content
