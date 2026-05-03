@@ -7,3 +7,7 @@
 **Vulnerability:** Not a direct security vulnerability, but an environmental instability. The `requirements.txt` allowed `mistralai>=1.1.0`, which pulled in version 2.x.
 **Learning:** MistralAI 2.x introduces breaking changes in the client import structure (`from mistralai import Mistral` fails if not using the new client correctly or if expecting the old one). This caused the entire application (including security tests) to fail on startup.
 **Prevention:** Pin critical dependencies like `mistralai==1.1.0` in `requirements.txt` to ensure consistent behavior across development and CI environments, especially when using agents that rely on specific API structures.
+## 2026-05-20 - [HTTP Header Injection in POA&M Endpoint]
+**Vulnerability:** The `generate_poam` endpoint allowed unsanitized user input (`system_name`) directly into the `Content-Disposition` header.
+**Learning:** Even internal-facing or "safe" endpoints handling file downloads must sanitize input to prevent HTTP Header Injection or Path Traversal attacks.
+**Prevention:** Always use regex sanitization (e.g., `re.sub(r'[^a-zA-Z0-9_\-]', '_', system_name)`) on variables interpolated into headers.
