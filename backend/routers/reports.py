@@ -59,7 +59,7 @@ def get_status_emoji(status: str) -> str:
         "partial": "🟡",
         "partially_implemented": "🟡",
         "planned": "📝",
-        "not_implemented": "🛑",
+        "not_implemented": "🚫",
         "na": "⚪",
         "not_started": "⚪",
     }
@@ -171,7 +171,7 @@ async def generate_ssp(
 {zt_rows}
 ## 3. Assessment Findings
 
-*Note: Only the first 20 assessment findings are displayed in this summary.*
+*Showing first 20 of {len(assessments)} assessment findings.*
 
 """
 
@@ -185,6 +185,8 @@ async def generate_ssp(
             f"{get_confidence_stars(a.confidence)} ({a.confidence:.0%})"
         )
         ssp += f"""### {a.control_id} - {ctrl_title}
+[Back to Top](#system-security-plan-ssp)
+
 - **Status:** {status_display}
 - **Confidence:** {confidence_display}
 - **Notes:** {a.notes or 'None'}
