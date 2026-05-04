@@ -23,6 +23,34 @@ from backend.db.database import (AssessmentRecord, ControlRecord,
 
 router = APIRouter()
 
+ZT_PILLAR_DOMAINS = {
+    "User": ["AC", "IA", "PS"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA"],
+}
+
+
+def get_maturity_pct(assessments: List[AssessmentRecord], domains: List[str]) -> float:
+    """Calculate implementation percentage for a set of domains."""
+    relevant = [
+        a
+        for a in assessments
+        if any(a.control_id.startswith(d + ".") for d in domains)
+        and a.status != "na"
+    ]
+    if not relevant:
+        return 0.0
+    score = sum(
+        1.0 if a.status == "implemented" else 0.5
+        for a in relevant
+        if a.status in ["implemented", "partial", "partially_implemented"]
+    )
+    return (score / len(relevant)) * 100
+
 
 def get_status_emoji(status: str) -> str:
     """Map implementation status to a visual emoji for better scannability."""
@@ -31,7 +59,7 @@ def get_status_emoji(status: str) -> str:
         "partial": "🟡",
         "partially_implemented": "🟡",
         "planned": "📝",
-        "not_implemented": "🛑",
+        "not_implemented": "🚫",
         "na": "⚪",
         "not_started": "⚪",
     }
@@ -94,13 +122,11 @@ async def generate_ssp(
     )
     sprs_estimate = max(-203, round(sprs_estimate, 0))
 
-    total_controls_count = len(controls)
-    compliance_pct = (
-        (status_counts["implemented"] / total_controls_count * 100)
-        if total_controls_count > 0
-        else 0
-    )
-    progress_bar = get_progress_bar(compliance_pct)
+    # Calculate Zero Trust Pillar progress
+    zt_rows = ""
+    for pillar, domains in ZT_PILLAR_DOMAINS.items():
+        pct = get_maturity_pct(assessments, domains)
+        zt_rows += f"| {pillar} | {', '.join(domains)} | {get_progress_bar(pct)} |\n"
 
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
@@ -140,19 +166,12 @@ async def generate_ssp(
 
 ### Zero Trust Pillar Alignment
 
-| ZT Pillar | CMMC Domains | Status |
-|-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
-
+| ZT Pillar | CMMC Domains | Progress |
+|-----------|--------------|----------|
+{zt_rows}
 ## 3. Assessment Findings
 
-*Note: Only the first 20 assessment findings are displayed in this summary.*
+*Showing first 20 of {len(assessments)} assessment findings.*
 
 """
 
@@ -166,6 +185,8 @@ async def generate_ssp(
             f"{get_confidence_stars(a.confidence)} ({a.confidence:.0%})"
         )
         ssp += f"""### {a.control_id} - {ctrl_title}
+[Back to Top](#system-security-plan-ssp)
+
 - **Status:** {status_display}
 - **Confidence:** {confidence_display}
 - **Notes:** {a.notes or 'None'}

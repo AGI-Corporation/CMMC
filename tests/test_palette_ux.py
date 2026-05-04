@@ -73,3 +73,10 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+        # Check Zero Trust Pillar Alignment section
+        assert "### Zero Trust Pillar Alignment" in content
+        # Verify it's no longer showing "See assessment"
+        assert "See assessment" not in content
+        # Check that we have multiple progress bars (one for each pillar + overall)
+        assert content.count("█") >= 7 or content.count("░") >= 7
