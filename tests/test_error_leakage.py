@@ -36,7 +36,9 @@ async def test_global_exception_handler_masking():
     # The 'ask_question' endpoint calls 'agent.answer_compliance_question'.
     with patch(
         "agents.mistral_agent.agent.MistralComplianceAgent.answer_compliance_question",
-        side_effect=Exception("SENSITIVE DATABASE ERROR: user_db_prod connection failed at 10.0.1.5"),
+        side_effect=Exception(
+            "SENSITIVE DATABASE ERROR: user_db_prod connection failed at 10.0.1.5"
+        ),
     ):
         async with AsyncClient(
             transport=ASGITransport(app=app, raise_app_exceptions=False),
