@@ -128,8 +128,8 @@ uvicorn backend.main:app --reload
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 ### MCP Integration (Claude Desktop)
