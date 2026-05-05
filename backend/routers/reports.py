@@ -259,10 +259,7 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """Return compliance posture summary for dashboard rendering."""
-    # Performance Optimization: Selective column fetching
-    assessments_dict = await get_latest_assessments(
-        db, columns=[AssessmentRecord.status]
-    )
+    assessments_dict = await get_latest_assessments(db)
     assessments = list(assessments_dict.values())
 
     status_counts = {
