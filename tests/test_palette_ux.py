@@ -73,3 +73,50 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+
+@pytest.mark.anyio
+async def test_zt_pillar_progress_accuracy():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/ssp")
+        assert resp.status_code == 200
+        content = resp.text
+
+        # Verify ZT Pillar Alignment section headers
+        assert "| ZT Pillar | CMMC Domains | Progress |" in content
+
+        # Verify specific pillars are present
+        assert "| User | AC, IA, PS |" in content
+        assert "| Device | CM, MA, PE |" in content
+
+        # In our setup_db:
+        # AC.1.001 is implemented (100%)
+        # AC.1.002 is partial (50%)
+        # User pillar domains: AC, IA, PS.
+        # Only AC domains have assessments.
+        # AC.1.001 and AC.1.002 both start with AC.
+        # Maturity for User pillar should be (1.0 + 0.5) / 2 = 75%
+        # get_progress_bar(75) with width 10: filled = round(0.75 * 10) = 8
+        # Resulting bar: `████████░░` 75.0%
+        assert "`████████░░` 75.0%" in content
+
+
+@pytest.mark.anyio
+async def test_dashboard_zt_consistency():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/dashboard")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Check for ZT pillars in dashboard
+        zt_pillars = data.get("zt_pillars", [])
+        assert len(zt_pillars) == 7
+
+        # Find User pillar
+        user_pillar = next((p for p in zt_pillars if p["pillar"] == "User"), None)
+        assert user_pillar is not None
+        assert user_pillar["maturity"] == 75.0
