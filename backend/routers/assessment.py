@@ -101,14 +101,8 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     implemented = not_implemented = partial = not_started = not_applicable = 0
     sprs_score = 110  # Start at max, deduct for non-implemented
 
-    for c in controls:
-        domain = c.domain
-        level = c.level
-        cid = c.id
-
-        assessment = assessments_map.get(cid)
-        status = assessment.status if assessment else "not_started"
-
+    def update_stats(cid, domain, level, status):
+        nonlocal implemented, not_implemented, partial, not_applicable, not_started, sprs_score
         if domain not in by_domain:
             by_domain[domain] = {"total": 0, "implemented": 0, "not_implemented": 0}
         by_domain[domain]["total"] += 1
@@ -123,26 +117,28 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
         elif status == "not_implemented":
             not_implemented += 1
             by_domain[domain]["not_implemented"] += 1
-            deduction = SPRS_DEDUCTIONS.get(cid, 1)
-            sprs_score -= deduction
-        elif status == "partially_implemented" or status == "partial":
+            sprs_score -= SPRS_DEDUCTIONS.get(cid, 1)
+        elif status in ("partially_implemented", "partial"):
             partial += 1
         elif status == "not_applicable":
             not_applicable += 1
         else:
             not_started += 1
 
+    for c in controls:
+        assessment = assessments_map.get(c.id)
+        update_stats(c.id, c.domain, c.level, assessment.status if assessment else "not_started")
+
     total = len(controls)
     pct = (implemented / total * 100) if total > 0 else 0
 
-    if pct >= 100:
-        readiness = "Ready for Certification"
-    elif pct >= 80:
-        readiness = "Near Compliant - Minor Gaps"
-    elif pct >= 60:
-        readiness = "In Progress - Significant Gaps"
-    else:
-        readiness = "Early Stage - Major Remediation Needed"
+    readiness_levels = [
+        (100, "Ready for Certification"),
+        (80, "Near Compliant - Minor Gaps"),
+        (60, "In Progress - Significant Gaps"),
+        (0, "Early Stage - Major Remediation Needed"),
+    ]
+    readiness = next(text for threshold, text in readiness_levels if pct >= threshold)
 
     return DashboardSummary(
         total_controls=total,
