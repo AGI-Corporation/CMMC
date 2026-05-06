@@ -6,11 +6,11 @@ These endpoints become MCP tools: calculate_sprs_score, get_compliance_dashboard
 import os
 import uuid
 from datetime import UTC, datetime
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.database import (AgentRunRecord, AssessmentRecord,
@@ -75,7 +75,10 @@ class SPRSResult(BaseModel):
     "/dashboard",
     response_model=DashboardSummary,
     summary="Get Compliance Dashboard",
-    description="Get overall CMMC compliance posture summary including implementation percentages, SPRS score, and breakdown by domain and level.",
+    description=(
+        "Get overall CMMC compliance posture summary including implementation "
+        "percentages, SPRS score, and breakdown by domain and level."
+    ),
 )
 async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     # Performance optimization: Fetch only necessary columns for the dashboard
@@ -160,7 +163,10 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     "/sprs",
     response_model=SPRSResult,
     summary="Calculate SPRS Score",
-    description="Calculate the DoD Supplier Performance Risk System (SPRS) score based on current control implementation status. Score ranges from -203 to 110.",
+    description=(
+        "Calculate the DoD Supplier Performance Risk System (SPRS) score based on "
+        "current control implementation status. Score ranges from -203 to 110."
+    ),
 )
 async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
     # Performance optimization: Fetch only control IDs for SPRS calculation
