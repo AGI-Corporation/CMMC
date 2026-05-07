@@ -9,6 +9,7 @@ from the current assessment state. Output formats: Markdown, JSON, CSV.
 import csv
 import io
 import json
+import re
 from datetime import UTC, date, datetime
 from typing import Any, Dict, List
 
@@ -17,9 +18,13 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (AssessmentRecord, ControlRecord,
-                                 EvidenceRecord, get_db,
-                                 get_latest_assessments)
+from backend.db.database import (
+    AssessmentRecord,
+    ControlRecord,
+    EvidenceRecord,
+    get_db,
+    get_latest_assessments,
+)
 
 router = APIRouter()
 
@@ -245,12 +250,11 @@ async def generate_poam(
             )
 
     csv_content = output.getvalue()
+    safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", system_name)
     return PlainTextResponse(
         content=csv_content,
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="poam_{system_name.replace(" ","_")}.csv"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="poam_{safe_name}.csv"'},
     )
 
 

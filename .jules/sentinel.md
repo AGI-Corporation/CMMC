@@ -7,3 +7,8 @@
 **Vulnerability:** Not a direct security vulnerability, but an environmental instability. The `requirements.txt` allowed `mistralai>=1.1.0`, which pulled in version 2.x.
 **Learning:** MistralAI 2.x introduces breaking changes in the client import structure (`from mistralai import Mistral` fails if not using the new client correctly or if expecting the old one). This caused the entire application (including security tests) to fail on startup.
 **Prevention:** Pin critical dependencies like `mistralai==1.1.0` in `requirements.txt` to ensure consistent behavior across development and CI environments, especially when using agents that rely on specific API structures.
+
+## 2026-05-20 - Information Disclosure & HTTP Header Injection
+**Vulnerability:** The application was exposing stack traces via exception `detail` in `agents/mistral_agent/agent.py` and improperly sanitizing the `system_name` parameter which could lead to HTTP Header Injection in `backend/routers/reports.py`.
+**Learning:** Returning `str(e)` directly in API responses can expose sensitive information. Also, simple `.replace(" ", "_")` is not sufficient to prevent header injection vulnerabilities. Proper sanitization requires regex or strict allowlists.
+**Prevention:** Use a generic error message (e.g., "An internal error occurred.") and log the actual error internally with `exc_info=True`. Use strict regex (e.g., `re.sub(r'[^a-zA-Z0-9_\-]', '_', input)`) when inserting user input into HTTP headers.
