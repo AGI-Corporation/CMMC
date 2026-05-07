@@ -73,3 +73,26 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+        # Check for Back to Top links
+        assert "[Back to Top](#system-security-plan-ssp)" in content
+
+        # Check for summary metadata
+        assert "Showing" in content
+        assert "of" in content
+
+
+@pytest.mark.anyio
+async def test_dashboard_consistency():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/dashboard")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert "zt_pillars" in data
+        for pillar in data["zt_pillars"]:
+            assert "pillar" in pillar
+            assert "maturity_score" in pillar
+            assert isinstance(pillar["maturity_score"], (int, float))
