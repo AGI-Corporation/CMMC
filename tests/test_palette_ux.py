@@ -73,3 +73,38 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+
+@pytest.mark.anyio
+async def test_zt_pillar_progress_accuracy():
+    """Verify that ZT pillar progress bars are correctly rendered based on assessments."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/ssp")
+        content = resp.text
+
+        # In our setup:
+        # AC.1.001 = implemented (1.0)
+        # AC.1.002 = partial (0.5)
+        # For User pillar (AC, IA, PS): (1.0 + 0.5) / 2 = 0.75 -> 75%
+        # The progress bar for 75% should be: █ (7.5 rounded to 8? No, round(75/100*10)=8)
+        # Width is 10. 75% of 10 is 7.5. Round(7.5) = 8.
+        # So 8 blocks: █ █ █ █ █ █ █ █ ░ ░
+        assert "█" * 8 in content
+        assert "75.0%" in content
+
+
+@pytest.mark.anyio
+async def test_dashboard_consistency():
+    """Verify that the dashboard API returns consistent maturity scores."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/reports/dashboard")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        user_pillar = next(p for p in data["zt_pillars"] if p["pillar"] == "User")
+        # Same calculation as above: 75.0%
+        assert user_pillar["maturity_score"] == 75.0
