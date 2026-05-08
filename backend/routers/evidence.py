@@ -44,7 +44,7 @@ async def create_evidence(
         title=evidence.title,
         description=evidence.description,
         source_system=evidence.source_system,
-        uri=evidence.uri,
+        uri=str(evidence.uri) if evidence.uri else None,
         reviewer=evidence.reviewer,
         review_cycle_days=evidence.review_cycle_days,
         metadata_=evidence.metadata or {},
