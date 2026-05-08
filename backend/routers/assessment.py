@@ -78,10 +78,19 @@ class SPRSResult(BaseModel):
     description="Get overall CMMC compliance posture summary including implementation percentages, SPRS score, and breakdown by domain and level.",
 )
 async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(ControlRecord))
-    controls = result.scalars().all()
+    # Optimization: Selective column fetching for ControlRecord including score_value
+    result = await db.execute(
+        select(
+            ControlRecord.id,
+            ControlRecord.domain,
+            ControlRecord.level,
+            ControlRecord.score_value,
+        )
+    )
+    controls = result.all()
 
-    assessments_map = await get_latest_assessments(db)
+    # Optimization: Selective column fetching for AssessmentRecord
+    assessments_map = await get_latest_assessments(db, columns=["status"])
 
     by_domain = {}
     by_level = {
@@ -114,7 +123,7 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
         elif status == "not_implemented":
             not_implemented += 1
             by_domain[domain]["not_implemented"] += 1
-            deduction = SPRS_DEDUCTIONS.get(cid, 1)
+            deduction = SPRS_DEDUCTIONS.get(cid, c.score_value or 1)
             sprs_score -= deduction
         elif status == "partially_implemented" or status == "partial":
             partial += 1
@@ -157,10 +166,12 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
     description="Calculate the DoD Supplier Performance Risk System (SPRS) score based on current control implementation status. Score ranges from -203 to 110.",
 )
 async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(ControlRecord))
-    controls = result.scalars().all()
+    # Optimization: Selective column fetching for ControlRecord including score_value
+    result = await db.execute(select(ControlRecord.id, ControlRecord.score_value))
+    controls = result.all()
 
-    assessments_map = await get_latest_assessments(db)
+    # Optimization: Selective column fetching for AssessmentRecord
+    assessments_map = await get_latest_assessments(db, columns=["status"])
 
     sprs = 110
     deductions_list = []
@@ -180,7 +191,7 @@ async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
             "partial",
         ]:
             not_implemented_count += 1
-            deduction = SPRS_DEDUCTIONS.get(cid, 1)
+            deduction = SPRS_DEDUCTIONS.get(cid, c.score_value or 1)
             sprs -= deduction
             deductions_list.append({"control_id": cid, "deduction": deduction})
 
