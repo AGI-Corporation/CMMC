@@ -36,22 +36,37 @@ async def list_controls(
     ),
     db: AsyncSession = Depends(get_db),
 ):
-    # Base query for controls
-    query = select(ControlRecord)
+    # Base query for controls - Selective column fetching
+    query = select(
+        ControlRecord.id,
+        ControlRecord.title,
+        ControlRecord.description,
+        ControlRecord.domain,
+        ControlRecord.level,
+        ControlRecord.nist_mapping,
+        ControlRecord.score_value,
+        ControlRecord.zt_pillar,
+    )
     if level:
         query = query.where(ControlRecord.level == level.value)
     if domain:
         query = query.where(ControlRecord.domain == domain.value)
 
     ctrl_result = await db.execute(query)
-    controls_data = ctrl_result.scalars().all()
+    controls_data = ctrl_result.all()
 
     # Extract IDs to fetch only required assessments
     control_ids = [c.id for c in controls_data]
 
-    # Optimization: Use shared helper with ID filtering
+    # Optimization: Use shared helper with ID and Column filtering
     assessments_map = (
-        await get_latest_assessments(db, control_ids=control_ids) if control_ids else {}
+        await get_latest_assessments(
+            db,
+            control_ids=control_ids,
+            columns=["status", "evidence_ids", "notes", "confidence", "poam_required"],
+        )
+        if control_ids
+        else {}
     )
 
     responses = []
