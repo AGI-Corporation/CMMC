@@ -44,3 +44,19 @@ async def test_error_leakage_masking_starlette_http_exception():
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Not Found"
+
+@pytest.mark.anyio
+async def test_error_leakage_validation_error():
+    """
+    Verify that Pydantic validation errors (422) are NOT masked as 500.
+    """
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test"
+    ) as ac:
+        # Missing required fields in payload
+        payload = {"control_id": "AC.1.001"}
+        response = await ac.post("/api/agents/mistral/gap-analysis", json=payload)
+
+    assert response.status_code == 422
+    assert "detail" in response.json()
