@@ -23,6 +23,27 @@ from backend.db.database import (AssessmentRecord, ControlRecord,
 
 router = APIRouter()
 
+ZT_PILLAR_DOMAINS = {
+    "User": ["AC", "IA", "PS"],
+    "Device": ["CM", "MA", "PE"],
+    "Network": ["SC", "AC"],
+    "Application": ["CM", "CA", "SI"],
+    "Data": ["MP", "SC", "AU"],
+    "Visibility & Analytics": ["AU", "IR", "RA"],
+    "Automation & Orchestration": ["IR", "SI", "CA"],
+}
+
+
+def get_maturity_pct(assessments: List[Any], domains: List[str]) -> float:
+    """Calculate maturity percentage for a set of domains."""
+    relevant = [a for a in assessments if a.control_id.split(".")[0] in domains]
+    if not relevant:
+        return 0.0
+    scores = {"implemented": 1.0, "partial": 0.5, "partially_implemented": 0.5}
+    total_score = sum(scores.get(a.status, 0.0) for a in relevant if a.status != "na")
+    active_count = len([a for a in relevant if a.status != "na"])
+    return (total_score / active_count * 100) if active_count > 0 else 0.0
+
 
 def get_status_emoji(status: str) -> str:
     """Map implementation status to a visual emoji for better scannability."""
@@ -142,17 +163,17 @@ async def generate_ssp(
 
 | ZT Pillar | CMMC Domains | Status |
 |-----------|--------------|--------|
-| User | AC, IA, PS | See assessment |
-| Device | CM, MA, PE | See assessment |
-| Network | SC, AC | See assessment |
-| Application | CM, CA, SI | See assessment |
-| Data | MP, SC, AU | See assessment |
-| Visibility & Analytics | AU, IR, RA | See assessment |
-| Automation & Orchestration | IR, SI, CA | See assessment |
+"""
+    for pillar, domains in ZT_PILLAR_DOMAINS.items():
+        maturity = get_maturity_pct(assessments, domains)
+        ssp += f"| {pillar} | {', '.join(domains)} | {get_progress_bar(maturity)} |\n"
+
+    ssp += f"""
+[Back to Top](#system-security-plan-ssp)
 
 ## 3. Assessment Findings
 
-*Note: Only the first 20 assessment findings are displayed in this summary.*
+*Showing {min(20, len(assessments))} of {len(assessments)} latest assessment findings.*
 
 """
 
@@ -170,6 +191,7 @@ async def generate_ssp(
 - **Confidence:** {confidence_display}
 - **Notes:** {a.notes or 'None'}
 - **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}
+- [Back to Top](#system-security-plan-ssp)
 
 """
 
@@ -300,13 +322,12 @@ async def get_dashboard(
             round(implemented / total_controls * 100, 1) if total_controls else 0
         ),
         "zt_pillars": [
-            {"pillar": "User", "domains": ["AC", "IA", "PS"]},
-            {"pillar": "Device", "domains": ["CM", "MA", "PE"]},
-            {"pillar": "Network", "domains": ["SC", "AC"]},
-            {"pillar": "Application", "domains": ["CM", "CA", "SI"]},
-            {"pillar": "Data", "domains": ["MP", "SC", "AU"]},
-            {"pillar": "Visibility & Analytics", "domains": ["AU", "IR", "RA"]},
-            {"pillar": "Automation & Orchestration", "domains": ["IR", "SI", "CA"]},
+            {
+                "pillar": pillar,
+                "domains": domains,
+                "maturity_score": round(get_maturity_pct(assessments, domains), 1),
+            }
+            for pillar, domains in ZT_PILLAR_DOMAINS.items()
         ],
         "agents": [
             {"name": "orchestrator", "endpoint": "/api/orchestrator"},
