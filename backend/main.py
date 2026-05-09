@@ -12,9 +12,11 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_mcp import FastApiMCP
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from agents.devsecops_agent import agent as devsecops
 from agents.icam_agent import agent as icam
@@ -82,6 +84,29 @@ app.include_router(
 )
 app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
 
+
+# ─── Exception Handlers ───────────────────────────────────────────────────────
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Preserve standard HTTP exceptions (4xx) for the client."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catch-all for unhandled exceptions.
+    Masks internal error details to prevent information leakage (CWE-209).
+    """
+    # Log the full exception on the server side (in a real app)
+    # print(f"Unhandled error: {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
 
