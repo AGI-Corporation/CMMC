@@ -137,10 +137,13 @@ async def get_db():
             await session.close()
 
 
-async def get_latest_assessments(db: AsyncSession, control_ids: list[str] = None):
+async def get_latest_assessments(
+    db: AsyncSession, control_ids: list[str] = None, columns: list = None
+):
     """
     Shared helper to fetch the latest AssessmentRecord for each control.
     Optionally filtered by a list of control_ids for better performance.
+    Supports selective column fetching via the 'columns' parameter.
     """
     sub_q = select(
         AssessmentRecord.control_id,
@@ -152,11 +155,26 @@ async def get_latest_assessments(db: AsyncSession, control_ids: list[str] = None
 
     sub_q = sub_q.subquery()
 
-    query = select(AssessmentRecord).join(
+    if columns:
+        # Avoid in-place modification of caller's list
+        fetch_columns = list(columns)
+        # Ensure control_id is always fetched for mapping integrity
+        # Using 'is' for identity check on SQLAlchemy InstrumentedAttributes
+        if not any(AssessmentRecord.control_id is c for c in fetch_columns):
+            fetch_columns.append(AssessmentRecord.control_id)
+        query = select(*fetch_columns)
+    else:
+        query = select(AssessmentRecord)
+
+    query = query.join(
         sub_q,
         (AssessmentRecord.control_id == sub_q.c.control_id)
         & (AssessmentRecord.assessment_date == sub_q.c.max_date),
     )
 
     result = await db.execute(query)
+    if columns:
+        # result.all() returns Row objects which support attribute access
+        # This allows them to act as lightweight drop-in replacements for models
+        return {a.control_id: a for a in result.all()}
     return {a.control_id: a for a in result.scalars().all()}
