@@ -30,6 +30,7 @@ def get_status_emoji(status: str) -> str:
         "implemented": "✅",
         "partial": "🟡",
         "partially_implemented": "🟡",
+        "in_progress": "🟡",
         "planned": "📝",
         "not_implemented": "🛑",
         "na": "⚪",
@@ -79,7 +80,7 @@ async def generate_ssp(
     for a in assessments:
         if a.status in status_counts:
             status_counts[a.status] += 1
-        elif a.status == "partially_implemented":
+        elif a.status in ["partially_implemented", "in_progress"]:
             status_counts["partial"] += 1
 
     total_controls = len(controls)
@@ -93,14 +94,6 @@ async def generate_ssp(
         status_counts["not_implemented"] * 1 + status_counts["partial"] * 0.5
     )
     sprs_estimate = max(-203, round(sprs_estimate, 0))
-
-    total_controls_count = len(controls)
-    compliance_pct = (
-        (status_counts["implemented"] / total_controls_count * 100)
-        if total_controls_count > 0
-        else 0
-    )
-    progress_bar = get_progress_bar(compliance_pct)
 
     ssp = f"""# System Security Plan (SSP)
 ## {system_name}
@@ -136,6 +129,8 @@ async def generate_ssp(
 | Not Implemented | {get_status_emoji('not_implemented')} {status_counts['not_implemented']} |
 | N/A | {get_status_emoji('na')} {status_counts['na']} |
 
+[↑ Back to Top](#system-security-plan-ssp)
+
 ## 2. Control Implementation Summary
 
 ### Zero Trust Pillar Alignment
@@ -150,9 +145,11 @@ async def generate_ssp(
 | Visibility & Analytics | AU, IR, RA | See assessment |
 | Automation & Orchestration | IR, SI, CA | See assessment |
 
+[↑ Back to Top](#system-security-plan-ssp)
+
 ## 3. Assessment Findings
 
-*Note: Only the first 20 assessment findings are displayed in this summary.*
+*Showing {min(20, len(assessments))} of {len(assessments)} assessment findings.*
 
 """
 
@@ -174,6 +171,8 @@ async def generate_ssp(
 """
 
     ssp += """
+[↑ Back to Top](#system-security-plan-ssp)
+
 ## 4. Next Steps
 
 1. Complete POA&M for all not_implemented controls

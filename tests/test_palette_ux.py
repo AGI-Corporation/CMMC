@@ -73,3 +73,9 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+        # Check for Palette UX enhancements
+        assert "Showing 2 of 2 assessment findings" in content
+        assert "[↑ Back to Top](#system-security-plan-ssp)" in content
+        # Count Back to Top links - should be 3
+        assert content.count("[↑ Back to Top](#system-security-plan-ssp)") == 3
