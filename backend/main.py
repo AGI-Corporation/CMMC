@@ -8,13 +8,17 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from agents.devsecops_agent import agent as devsecops
 from agents.icam_agent import agent as icam
@@ -25,6 +29,13 @@ from backend.middleware.security import SecurityHeadersMiddleware
 from backend.routers import assessment, controls, evidence, reports
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -81,6 +92,43 @@ app.include_router(
     devsecops.router, prefix="/api/agents/devsecops", tags=["DevSecOps Agent"]
 )
 app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
+
+
+# ─── Exception Handlers ───────────────────────────────────────────────────────
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Preserve 4xx errors but mask 500+ errors."""
+    if exc.status_code >= 500:
+        logger.error(f"Internal Server Error: {exc.detail}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error"},
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle 422 validation errors."""
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Mask all unhandled internal server errors."""
+    logger.error(f"Unhandled Exception: {str(exc)}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
+    )
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
