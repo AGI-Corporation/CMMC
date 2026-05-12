@@ -15,8 +15,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (ControlRecord, get_db,
-                                 get_latest_assessments)
+from backend.db.database import ControlRecord, get_db, get_latest_assessments
 
 router = APIRouter()
 
