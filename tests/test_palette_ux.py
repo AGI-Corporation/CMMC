@@ -1,5 +1,10 @@
+import sys
 import uuid
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
+
+# Mock mistralai before importing the app
+sys.modules["mistralai"] = MagicMock()
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -73,3 +78,7 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+        # Check for Palette UX enhancements
+        assert "[Back to Top](#system-security-plan-ssp)" in content
+        assert "Showing" in content and "assessment findings" in content
