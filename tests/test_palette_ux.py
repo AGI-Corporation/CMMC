@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.database import AssessmentRecord, Base, engine, init_db
 from backend.main import app
@@ -73,3 +72,7 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+
+        # Check for Palette UX enhancements
+        assert "[Back to Top](#system-security-plan-ssp)" in content
+        assert "Showing" in content and "assessment findings" in content

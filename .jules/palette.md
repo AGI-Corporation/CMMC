@@ -9,3 +9,7 @@ This journal tracks critical UX and accessibility learnings for the CMMC Complia
 ## 2026-03-27 - Visual Scannability in Markdown Reports
 **Learning:** Dense text reports like the System Security Plan (SSP) are difficult to scan for high-level status. Using familiar visual metaphors like emojis (✅/🟡/🛑), star ratings (⭐⭐⭐), and block-based progress bars (█░) significantly improves information density and "at-a-glance" comprehension in non-interactive formats like Markdown.
 **Action:** Always consider adding visual markers (emojis, progress bars) to text-based reports to highlight critical status and progress metrics.
+
+## 2026-03-28 - Navigational Scannability and Metadata in Long Reports
+**Learning:** For long, non-interactive documents like Markdown SSPs, providing internal navigation (e.g., 'Back to Top' anchors) and explicit metadata about the shown dataset (e.g., 'Showing X of Y') drastically improves the user's sense of orientation and prevents confusion about missing data.
+**Action:** Implement 'Back to Top' links and 'Showing X of Y' summaries in all generated long-form reports.

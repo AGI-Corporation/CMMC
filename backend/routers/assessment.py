@@ -13,8 +13,13 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (AgentRunRecord, AssessmentRecord,
-                                 ControlRecord, get_db, get_latest_assessments)
+from backend.db.database import (
+    AgentRunRecord,
+    AssessmentRecord,
+    ControlRecord,
+    get_db,
+    get_latest_assessments,
+)
 
 router = APIRouter()
 
@@ -116,7 +121,7 @@ async def get_compliance_dashboard(db: AsyncSession = Depends(get_db)):
             by_domain[domain]["not_implemented"] += 1
             deduction = SPRS_DEDUCTIONS.get(cid, 1)
             sprs_score -= deduction
-        elif status == "partially_implemented" or status == "partial":
+        elif status in ["partially_implemented", "partial", "in_progress"]:
             partial += 1
         elif status == "not_applicable":
             not_applicable += 1
@@ -178,6 +183,7 @@ async def calculate_sprs_score(db: AsyncSession = Depends(get_db)):
             "not_started",
             "partially_implemented",
             "partial",
+            "in_progress",
         ]:
             not_implemented_count += 1
             deduction = SPRS_DEDUCTIONS.get(cid, 1)
