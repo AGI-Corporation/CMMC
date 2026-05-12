@@ -1,9 +1,14 @@
 import asyncio
 import os
 
+from unittest.mock import MagicMock
+import sys
 import pytest
-from httpx import ASGITransport, AsyncClient
 
+# Mock mistralai before importing app
+sys.modules['mistralai'] = MagicMock()
+
+from httpx import ASGITransport, AsyncClient
 from backend.db.database import Base, engine, init_db
 from backend.main import app
 
