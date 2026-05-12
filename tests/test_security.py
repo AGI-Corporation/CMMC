@@ -1,11 +1,13 @@
-from unittest.mock import MagicMock
 import sys
+from unittest.mock import MagicMock
+
 import pytest
 
 # Mock mistralai before importing app
-sys.modules['mistralai'] = MagicMock()
+sys.modules["mistralai"] = MagicMock()
 
 from httpx import ASGITransport, AsyncClient
+
 from backend.main import app
 
 

@@ -82,6 +82,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "An internal server error occurred."},
     )
 
+
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 
 cors_origins = json.loads(
