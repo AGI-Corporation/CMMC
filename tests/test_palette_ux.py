@@ -1,14 +1,8 @@
-import sys
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
-
-# Mock mistralai before importing the app
-sys.modules["mistralai"] = MagicMock()
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.database import AssessmentRecord, Base, engine, init_db
 from backend.main import app
