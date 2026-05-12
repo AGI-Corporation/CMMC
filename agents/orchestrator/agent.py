@@ -20,8 +20,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (AgentRunRecord, AssessmentRecord,
-                                 ControlRecord, get_db)
+from backend.db.database import AgentRunRecord, AssessmentRecord, ControlRecord, get_db
 
 
 class AgentType(str, Enum):
