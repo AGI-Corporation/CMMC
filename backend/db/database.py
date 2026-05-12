@@ -7,8 +7,18 @@ import json
 import os
 from datetime import UTC, datetime
 
-from sqlalchemy import (JSON, Column, DateTime, Float, Index, Integer, String,
-                        Text, func, select)
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 

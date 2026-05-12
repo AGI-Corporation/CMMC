@@ -13,8 +13,13 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.database import (AgentRunRecord, AssessmentRecord,
-                                 ControlRecord, get_db, get_latest_assessments)
+from backend.db.database import (
+    AgentRunRecord,
+    AssessmentRecord,
+    ControlRecord,
+    get_db,
+    get_latest_assessments,
+)
 
 router = APIRouter()
 
