@@ -30,9 +30,11 @@ def get_status_emoji(status: str) -> str:
         "implemented": "✅",
         "partial": "🟡",
         "partially_implemented": "🟡",
+        "in_progress": "🟡",
         "planned": "📝",
         "not_implemented": "🛑",
         "na": "⚪",
+        "not_applicable": "⚪",
         "not_started": "⚪",
     }
     return mapping.get(status, "⚪")
@@ -46,9 +48,9 @@ def get_progress_bar(percentage: float, width: int = 10) -> str:
 
 
 def get_confidence_stars(confidence: float) -> str:
-    """Convert confidence float (0-1) to star rating (1-5), padded to 5 chars."""
+    """Convert confidence float (0-1) to star rating (0-5), padded to 5 chars."""
     stars = int(confidence * 5 + 0.5)
-    stars = max(1, min(5, stars))
+    stars = max(0, min(5, stars))
     return "⭐" * stars + "☆" * (5 - stars)
 
 
@@ -83,6 +85,7 @@ async def generate_ssp(
             status_counts["partial"] += 1
 
     total_controls = len(controls)
+    total_evidence_count = sum(len(a.evidence_ids or []) for a in assessments)
     implemented_pct = (
         (status_counts["implemented"] / total_controls * 100)
         if total_controls > 0
@@ -130,11 +133,14 @@ async def generate_ssp(
 | Classification | {classification} |
 | Assessment Date | {date.today()} |
 | Total Controls | {total_controls} |
+| Evidence Collected | {total_evidence_count} items |
 | Implemented | {get_status_emoji('implemented')} {status_counts['implemented']} |
 | Partial | {get_status_emoji('partial')} {status_counts['partial']} |
 | Planned | {get_status_emoji('planned')} {status_counts['planned']} |
 | Not Implemented | {get_status_emoji('not_implemented')} {status_counts['not_implemented']} |
 | N/A | {get_status_emoji('na')} {status_counts['na']} |
+
+[Back to Top](#system-security-plan-ssp)
 
 ## 2. Control Implementation Summary
 
@@ -150,9 +156,11 @@ async def generate_ssp(
 | Visibility & Analytics | AU, IR, RA | See assessment |
 | Automation & Orchestration | IR, SI, CA | See assessment |
 
+[Back to Top](#system-security-plan-ssp)
+
 ## 3. Assessment Findings
 
-*Note: Only the first 20 assessment findings are displayed in this summary.*
+*Showing {len(assessments[:20])} of {len(assessments)} assessment findings.*
 
 """
 
@@ -174,6 +182,8 @@ async def generate_ssp(
 """
 
     ssp += """
+[Back to Top](#system-security-plan-ssp)
+
 ## 4. Next Steps
 
 1. Complete POA&M for all not_implemented controls
