@@ -22,9 +22,18 @@ from agents.mistral_agent import agent as mistral
 from agents.orchestrator import agent as orchestrator
 from backend.db.database import init_db
 from backend.middleware.security import SecurityHeadersMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import logging
+
 from backend.routers import assessment, controls, evidence, reports
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -63,6 +72,44 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# ─── Exception Handlers ───────────────────────────────────────────────────────
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """
+    Ensure that internal server errors (500+) are masked even if explicitly raised.
+    Preserves informative 4xx errors for client-side issues.
+    """
+    headers = getattr(exc, "headers", None)
+    if exc.status_code >= 500:
+        logger.error(f"HTTP {exc.status_code} Error: {exc.detail}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": "An internal server error occurred."},
+            headers=headers,
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=headers,
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global catch-all for unhandled exceptions.
+    Masks internal details and logs the full stack trace for admins.
+    """
+    logger.exception("Unhandled exception occurred")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please contact support."},
+    )
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
