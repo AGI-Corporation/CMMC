@@ -7,3 +7,8 @@
 **Vulnerability:** Not a direct security vulnerability, but an environmental instability. The `requirements.txt` allowed `mistralai>=1.1.0`, which pulled in version 2.x.
 **Learning:** MistralAI 2.x introduces breaking changes in the client import structure (`from mistralai import Mistral` fails if not using the new client correctly or if expecting the old one). This caused the entire application (including security tests) to fail on startup.
 **Prevention:** Pin critical dependencies like `mistralai==1.1.0` in `requirements.txt` to ensure consistent behavior across development and CI environments, especially when using agents that rely on specific API structures.
+
+## 2025-05-15 - Global Exception Masking for Information Disclosure
+**Vulnerability:** Mistral agent endpoints explicitly leaked raw exception messages via `HTTPException(status_code=500, detail=str(e))`, exposing internal implementation details.
+**Learning:** Centralizing error handling using FastAPI exception handlers (`@app.exception_handler`) allows for a "fail-secure" default. By masking all 500+ errors with a generic message while preserving 422/4xx errors, we protect the system's internal state from being disclosed to potential attackers.
+**Prevention:** Avoid manual `try...except` blocks that return raw error strings in route handlers. Use a global safety net and only return specific, safe error messages for expected client errors.
