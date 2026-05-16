@@ -22,7 +22,18 @@ from agents.mistral_agent import agent as mistral
 from agents.orchestrator import agent as orchestrator
 from backend.db.database import init_db
 from backend.middleware.security import SecurityHeadersMiddleware
+import logging
+
+from fastapi import Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from backend.routers import assessment, controls, evidence, reports
+
+# ─── Logging ──────────────────────────────────────────────────────────────────
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -63,6 +74,46 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# ─── Global Exception Handlers ────────────────────────────────────────────────
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Ensure validation errors remain informative for clients (422)."""
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": exc.body},
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Preserve 4xx errors but mask 500+ errors."""
+    if exc.status_code >= 500:
+        logger.error(f"Internal Server Error: {exc.detail}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": "An unexpected error occurred. Please contact support."},
+            headers=getattr(exc, "headers", None),
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    """Catch-all for unhandled exceptions to prevent detail leakage (500)."""
+    logger.error(f"Unhandled Exception: {str(exc)}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please contact support."},
+    )
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
