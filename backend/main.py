@@ -8,6 +8,7 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -21,6 +22,11 @@ from agents.icam_agent import agent as icam
 from agents.mistral_agent import agent as mistral
 from agents.orchestrator import agent as orchestrator
 from backend.db.database import init_db
+from fastapi import Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from backend.middleware.security import SecurityHeadersMiddleware
 from backend.routers import assessment, controls, evidence, reports
 
@@ -65,6 +71,52 @@ app.add_middleware(
 app.add_middleware(SecurityHeadersMiddleware)
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
+
+# ─── Exception Handlers ───────────────────────────────────────────────────────
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """
+    Handle HTTPExceptions. Preserve 4xx error details for client-side errors,
+    but mask 500 errors to prevent information disclosure.
+    """
+    if exc.status_code >= 500:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": "An unexpected error occurred. Please contact support."},
+            headers=getattr(exc, "headers", None),
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Handle request validation errors gracefully.
+    """
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": exc.body},
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catch-all for unhandled exceptions to prevent leaking stack traces
+    or internal details.
+    """
+    logging.exception(f"Unhandled exception during {request.method} {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please contact support."},
+    )
+
 
 # Core Routers
 app.include_router(controls.router, prefix="/api/controls", tags=["Controls"])
