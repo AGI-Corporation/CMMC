@@ -7,10 +7,9 @@ Responsibilities: container scanning, SBOM generation, pipeline gate evaluation.
 """
 
 import uuid
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -1,4 +1,3 @@
-import asyncio
 import os
 
 import pytest
@@ -114,11 +113,11 @@ async def test_update_with_advanced_fields():
         assert patch_response.status_code == 200
         data = patch_response.json()
         assert data["confidence"] == 0.95
-        assert data["poam_required"] == False
+        assert data["poam_required"] is False
 
         # Verify detail endpoint reflects these
         detail_response = await ac.get("/api/controls/AC.1.002")
         data = detail_response.json()
         assert data["confidence"] == 0.95
         assert data["evidence_count"] == 1
-        assert data["poam_required"] == False
+        assert data["poam_required"] is False
