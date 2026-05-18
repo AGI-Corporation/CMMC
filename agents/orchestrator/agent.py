@@ -9,7 +9,6 @@ agents, aggregates evidence, and generates unified compliance scorecards.
 Aligns with DoD ZT Orchestration/Automation pillar and Fulcrum LOE 3/4.
 """
 
-import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime

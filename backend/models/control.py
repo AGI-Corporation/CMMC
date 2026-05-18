@@ -70,7 +70,11 @@ class Control(BaseModel):
             "example": {
                 "id": "AC.1.001",
                 "title": "Limit system access to authorized users",
-                "description": "Limit information system access to authorized users, processes acting on behalf of authorized users, and devices (including other information systems).",
+                "description": (
+                    "Limit information system access to authorized users, processes "
+                    "acting on behalf of authorized users, and devices (including "
+                    "other information systems)."
+                ),
                 "domain": "AC",
                 "level": "Level 1",
                 "nist_mapping": "3.1.1",

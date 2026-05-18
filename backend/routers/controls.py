@@ -3,10 +3,10 @@ CMMC Controls Router - FastAPI endpoints for control management.
 These endpoints are automatically exposed as MCP tools via fastapi-mcp.
 """
 
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.database import (AssessmentRecord, ControlRecord, get_db,
@@ -22,7 +22,10 @@ router = APIRouter()
     "/",
     response_model=ControlListResponse,
     summary="List CMMC Controls",
-    description="List all CMMC controls, optionally filtered by level or domain. Returns controls with current implementation status.",
+    description=(
+        "List all CMMC controls, optionally filtered by level or domain. "
+        "Returns controls with current implementation status."
+    ),
 )
 async def list_controls(
     level: Optional[CMMCLevel] = Query(

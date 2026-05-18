@@ -9,7 +9,7 @@ All evidence records include ZT pillar, capability ID, and control mappings.
 
 import uuid
 from datetime import UTC, datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
