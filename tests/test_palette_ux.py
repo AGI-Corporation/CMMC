@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.database import AssessmentRecord, Base, engine, init_db
 from backend.main import app
