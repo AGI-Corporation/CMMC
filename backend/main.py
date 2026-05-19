@@ -8,13 +8,18 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_mcp import FastApiMCP
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.exception_handlers import http_exception_handler
 
 from agents.devsecops_agent import agent as devsecops
 from agents.icam_agent import agent as icam
@@ -25,6 +30,10 @@ from backend.middleware.security import SecurityHeadersMiddleware
 from backend.routers import assessment, controls, evidence, reports
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -63,6 +72,41 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# ─── Exception Handlers ───────────────────────────────────────────────────────
+
+
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """
+    Mask internal server errors (500+) while allowing client errors (4xx) to
+    pass through with their original messages.
+    """
+    if exc.status_code >= 500:
+        logger.error(f"HTTP {exc.status_code} Error: {exc.detail}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred. Please contact support."},
+        )
+    return await http_exception_handler(request, exc)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Global catch-all for any unhandled exceptions.
+    Logs the full stack trace internally and returns a generic 500 error.
+    """
+    if isinstance(exc, StarletteHTTPException):
+        return await custom_http_exception_handler(request, exc)
+
+    logger.exception("Unhandled exception occurred")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please contact support."},
+    )
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
