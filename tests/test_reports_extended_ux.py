@@ -1,28 +1,38 @@
 import uuid
 from datetime import UTC, datetime
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.database import AssessmentRecord, Base, engine, init_db, ControlRecord
+
+from backend.db.database import (AssessmentRecord, Base, ControlRecord, engine,
+                                 init_db)
 from backend.main import app
+
 
 @pytest.fixture(scope="session")
 def anyio_backend():
     return "asyncio"
 
+
 @pytest.fixture(scope="module", autouse=True)
 async def setup_db():
     import os
+
     os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_extended_ux.db"
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await init_db()
 
     from backend.db.database import AsyncSessionLocal
+
     async with AsyncSessionLocal() as session:
         # Check if control already exists (init_db might seed it)
         from sqlalchemy import select
-        res = await session.execute(select(ControlRecord).where(ControlRecord.id == "AC.1.001"))
+
+        res = await session.execute(
+            select(ControlRecord).where(ControlRecord.id == "AC.1.001")
+        )
         if not res.scalars().first():
             c1 = ControlRecord(
                 id="AC.1.001",
@@ -55,6 +65,7 @@ async def setup_db():
     if os.path.exists("./test_extended_ux.db"):
         os.remove("./test_extended_ux.db")
 
+
 @pytest.mark.anyio
 async def test_extended_report_ux():
     async with AsyncClient(
@@ -77,6 +88,7 @@ async def test_extended_report_ux():
 
         # Check for "Back to Top" links
         assert "[Back to Top](#system-security-plan-ssp)" in content
+
 
 @pytest.mark.anyio
 async def test_dashboard_consistency():
