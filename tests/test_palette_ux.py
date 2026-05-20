@@ -42,7 +42,14 @@ async def setup_db():
             confidence=0.5,
             assessment_date=datetime.now(UTC),
         )
-        session.add_all([a1, a2])
+        a3 = AssessmentRecord(
+            id=str(uuid.uuid4()),
+            control_id="AC.1.003",
+            status="not_started",
+            confidence=0.0,
+            assessment_date=datetime.now(UTC),
+        )
+        session.add_all([a1, a2, a3])
         await session.commit()
 
     yield
@@ -73,3 +80,15 @@ async def test_ssp_ux_elements():
         assert "⭐⭐⭐⭐⭐" in content
         # 0.5 confidence should have 3 stars: ⭐⭐⭐☆☆ (based on int(0.5 * 5 + 0.5) = 3)
         assert "⭐⭐⭐☆☆" in content
+        # 0.0 confidence should have 0 stars: ☆☆☆☆☆
+        assert "☆☆☆☆☆" in content
+
+        # Check for new navigation links
+        assert "[Back to Top](#system-security-plan-ssp)" in content
+
+        # Check for dynamic findings header
+        assert "Assessment Findings (Showing 3 of 3)" in content
+
+        # Check for Not Started in overview
+        assert "Not Started" in content
+        assert "⚪ 1" in content
