@@ -8,13 +8,16 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_mcp import FastApiMCP
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from agents.devsecops_agent import agent as devsecops
 from agents.icam_agent import agent as icam
@@ -25,6 +28,10 @@ from backend.middleware.security import SecurityHeadersMiddleware
 from backend.routers import assessment, controls, evidence, reports
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -81,6 +88,39 @@ app.include_router(
     devsecops.router, prefix="/api/agents/devsecops", tags=["DevSecOps Agent"]
 )
 app.include_router(mistral.router, prefix="/api/agents/mistral", tags=["Mistral Agent"])
+
+
+# ─── Exception Handlers ───────────────────────────────────────────────────────
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """
+    Mask internal server errors (500+) while preserving client errors (4xx).
+    """
+    if exc.status_code >= 500:
+        logger.exception(f"HTTP {exc.status_code} Error: {exc.detail}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": "An unexpected error occurred. Please contact support."},
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catch-all for unhandled exceptions to prevent sensitive info leakage.
+    """
+    logger.exception("Unhandled Exception")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please contact support."},
+    )
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
