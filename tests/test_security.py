@@ -53,7 +53,6 @@ async def test_error_masking_information_disclosure():
     This test is expected to pass (showing the vulnerability) before the fix,
     and then we will update it to expect masked errors after the fix.
     """
-    from backend.main import app
     from agents.mistral_agent.agent import agent
 
     sensitive_message = "Sensitive internal error details: DB connection string leaked or similar"
@@ -78,3 +77,30 @@ async def test_error_masking_information_disclosure():
     # New behavior: masks the sensitive exception message
     assert response.json()["detail"] == "An unexpected error occurred. Please contact support."
     assert sensitive_message not in response.json()["detail"]
+
+@pytest.mark.anyio
+async def test_evidence_uri_validation():
+    """
+    Verify that the uri field in EvidenceCreate is validated as a proper URL.
+    """
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test"
+    ) as ac:
+        # Invalid URI
+        payload = {
+            "control_id": "AC.1.001",
+            "zt_pillar": "User",
+            "evidence_type": "log",
+            "title": "Invalid URI Test",
+            "description": "Testing URL validation",
+            "source_system": "Test System",
+            "uri": "not-a-url"
+        }
+        response = await ac.post("/api/evidence/", json=payload)
+        assert response.status_code == 422
+
+        # Valid URI
+        payload["uri"] = "https://example.com/evidence.log"
+        response = await ac.post("/api/evidence/", json=payload)
+        assert response.status_code == 200

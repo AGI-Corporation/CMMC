@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 
-def pytest_configure():
+def pytest_configure(config):
     """
     Global mock for mistralai to ensure tests run even if package is missing
     or has version conflicts in the environment.
