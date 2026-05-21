@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class EvidenceType(str, Enum):
@@ -29,7 +29,7 @@ class EvidenceBase(BaseModel):
     title: str
     description: str
     source_system: str = Field(..., example="Okta / GitHub Actions")
-    uri: Optional[str] = None
+    uri: Optional[HttpUrl] = None
     reviewer: Optional[str] = None
     review_cycle_days: int = 365
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
@@ -61,7 +61,7 @@ class EvidenceSchema(BaseModel):
     zt_capability_id: Optional[str] = None
     controls: List[str]  # list of control IDs covered
     summary: str
-    uri: Optional[str] = None
+    uri: Optional[HttpUrl] = None
     timestamp: datetime
     owner_agent: str  # which agent produced this evidence
     retention_days: int = 1095  # 3-year default

@@ -8,12 +8,20 @@ Model Context Protocol (MCP).
 """
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import (
+    http_exception_handler as default_http_exception_handler,
+    request_validation_exception_handler as default_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi_mcp import FastApiMCP
 
 from agents.devsecops_agent import agent as devsecops
@@ -63,6 +71,43 @@ app.add_middleware(
 
 # Add Security Headers Middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+# ─── Exception Handlers ───────────────────────────────────────────────────────
+
+# Configure basic logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Preserve 4xx errors but mask 500+ errors."""
+    if exc.status_code >= 500:
+        logger.exception(f"Internal Server Error: {exc.detail}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": "An unexpected error occurred. Please contact support."},
+        )
+    return await default_http_exception_handler(request, exc)
+
+
+@app.exception_handler(RequestValidationError)
+async def custom_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+):
+    """Preserve validation errors (422)."""
+    return await default_validation_exception_handler(request, exc)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch-all for unhandled exceptions to prevent information disclosure."""
+    logger.exception(f"Unhandled Exception: {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please contact support."},
+    )
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
