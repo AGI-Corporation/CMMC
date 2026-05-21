@@ -14,6 +14,10 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import (
+    http_exception_handler as default_http_exception_handler,
+    request_validation_exception_handler as default_validation_exception_handler,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -76,7 +80,7 @@ logger = logging.getLogger(__name__)
 
 
 @app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Preserve 4xx errors but mask 500+ errors."""
     if exc.status_code >= 500:
         logger.exception(f"Internal Server Error: {exc.detail}")
@@ -84,20 +88,15 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             status_code=exc.status_code,
             content={"detail": "An unexpected error occurred. Please contact support."},
         )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-        headers=getattr(exc, "headers", None),
-    )
+    return await default_http_exception_handler(request, exc)
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+async def custom_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+):
     """Preserve validation errors (422)."""
-    return JSONResponse(
-        status_code=422,
-        content={"detail": exc.errors()},
-    )
+    return await default_validation_exception_handler(request, exc)
 
 
 @app.exception_handler(Exception)
