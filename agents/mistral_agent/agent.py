@@ -13,6 +13,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
+from fastapi import APIRouter, Depends
 from mistralai import Mistral
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -271,7 +272,6 @@ class MistralComplianceAgent:
 
 
 # ─── FastAPI router for Mistral agent endpoints ────────────────────────────────
-from fastapi import APIRouter, Depends
 
 router = APIRouter()
 agent = MistralComplianceAgent()
