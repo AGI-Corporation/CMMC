@@ -30,8 +30,10 @@ def get_status_emoji(status: str) -> str:
         "implemented": "✅",
         "partial": "🟡",
         "partially_implemented": "🟡",
+        "in_progress": "🟠",
         "planned": "📝",
         "not_implemented": "🛑",
+        "not_applicable": "⚪",
         "na": "⚪",
         "not_started": "⚪",
     }
@@ -46,9 +48,9 @@ def get_progress_bar(percentage: float, width: int = 10) -> str:
 
 
 def get_confidence_stars(confidence: float) -> str:
-    """Convert confidence float (0-1) to star rating (1-5), padded to 5 chars."""
+    """Convert confidence float (0-1) to star rating (0-5), padded to 5 chars."""
     stars = int(confidence * 5 + 0.5)
-    stars = max(1, min(5, stars))
+    stars = max(0, min(5, stars))
     return "⭐" * stars + "☆" * (5 - stars)
 
 
@@ -72,6 +74,7 @@ async def generate_ssp(
     status_counts = {
         "implemented": 0,
         "partial": 0,
+        "in_progress": 0,
         "planned": 0,
         "not_implemented": 0,
         "na": 0,
@@ -81,6 +84,10 @@ async def generate_ssp(
             status_counts[a.status] += 1
         elif a.status == "partially_implemented":
             status_counts["partial"] += 1
+        elif a.status == "not_applicable":
+            status_counts["na"] += 1
+        elif a.status == "not_started":
+            status_counts["na"] += 1
 
     total_controls = len(controls)
     implemented_pct = (
@@ -132,6 +139,7 @@ async def generate_ssp(
 | Total Controls | {total_controls} |
 | Implemented | {get_status_emoji('implemented')} {status_counts['implemented']} |
 | Partial | {get_status_emoji('partial')} {status_counts['partial']} |
+| In Progress | {get_status_emoji('in_progress')} {status_counts['in_progress']} |
 | Planned | {get_status_emoji('planned')} {status_counts['planned']} |
 | Not Implemented | {get_status_emoji('not_implemented')} {status_counts['not_implemented']} |
 | N/A | {get_status_emoji('na')} {status_counts['na']} |
@@ -152,24 +160,27 @@ async def generate_ssp(
 
 ## 3. Assessment Findings
 
-*Note: Only the first 20 assessment findings are displayed in this summary.*
-
 """
 
-    for a in assessments[:20]:  # Limit for readability
-        ctrl = controls.get(a.control_id)
-        ctrl_title = ctrl.title if ctrl else "Unknown"
-        status_display = (
-            f"{get_status_emoji(a.status)} {a.status.replace('_', ' ').title()}"
-        )
-        confidence_display = (
-            f"{get_confidence_stars(a.confidence)} ({a.confidence:.0%})"
-        )
-        ssp += f"""### {a.control_id} - {ctrl_title}
+    if not assessments:
+        ssp += "*No assessment findings available.*\n\n"
+    else:
+        ssp += f"*Showing {min(20, len(assessments))} of {len(assessments)} assessment findings.*\n\n"
+        for a in assessments[:20]:  # Limit for readability
+            ctrl = controls.get(a.control_id)
+            ctrl_title = ctrl.title if ctrl else "Unknown"
+            status_display = (
+                f"{get_status_emoji(a.status)} {a.status.replace('_', ' ').title()}"
+            )
+            confidence_display = (
+                f"{get_confidence_stars(a.confidence)} ({a.confidence:.0%})"
+            )
+            ssp += f"""### {a.control_id} - {ctrl_title}
 - **Status:** {status_display}
 - **Confidence:** {confidence_display}
 - **Notes:** {a.notes or 'None'}
 - **Evidence IDs:** {', '.join(a.evidence_ids or []) or 'None'}
+- [Back to Top](#system-security-plan-ssp)
 
 """
 
