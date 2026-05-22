@@ -5,6 +5,25 @@ from backend.main import app
 
 
 @pytest.mark.anyio
+async def test_validation_error_not_masked():
+    """
+    Verify that validation errors still return 422, not 500 (masked by global handler).
+    """
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as ac:
+        # Missing required fields should trigger RequestValidationError
+        response = await ac.post(
+            "/api/agents/mistral/gap-analysis",
+            json={"control_id": "missing_other_fields"}
+        )
+
+    assert response.status_code == 422
+    assert "detail" in response.json()
+
+
+@pytest.mark.anyio
 async def test_security_headers():
     """
     Verify that SecurityHeadersMiddleware correctly adds the required headers.
