@@ -68,7 +68,8 @@ async def setup_db():
 @pytest.mark.anyio
 async def test_ssp_ux_elements():
     async with AsyncClient(
-        transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
     ) as ac:
         resp = await ac.get("/api/reports/ssp")
         assert resp.status_code == 200
@@ -99,7 +100,8 @@ async def test_ssp_ux_elements():
 @pytest.mark.anyio
 async def test_dashboard_readiness_emojis():
     async with AsyncClient(
-        transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test"
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
     ) as ac:
         resp = await ac.get("/api/assessment/dashboard")
         assert resp.status_code == 200
