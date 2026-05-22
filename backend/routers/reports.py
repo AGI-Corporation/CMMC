@@ -276,6 +276,7 @@ async def get_dashboard(
     status_counts = {
         "implemented": 0,
         "partial": 0,
+        "in_progress": 0,
         "planned": 0,
         "not_implemented": 0,
         "na": 0,
@@ -286,6 +287,10 @@ async def get_dashboard(
             status_counts[a.status] += 1
         elif a.status == "partially_implemented":
             status_counts["partial"] += 1
+        elif a.status == "not_applicable":
+            status_counts["na"] += 1
+        elif a.status == "not_started":
+            status_counts["na"] += 1
 
     total_assessed = len(assessments)
     implemented = status_counts["implemented"]
